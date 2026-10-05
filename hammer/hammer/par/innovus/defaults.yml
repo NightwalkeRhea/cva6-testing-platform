@@ -1,0 +1,47 @@
+# Configuration options and defaults for Innovus.
+# The values specified in this file are the defaults.
+
+par.innovus:
+  # Location of the binary.
+  innovus_bin: "${cadence.cadence_home}/DDI/DDI${par.innovus.version}/INNOVUS${par.innovus.version}/bin/innovus"
+  innovus_bin_meta: lazysubst # we want later overrides to be able to affect this
+
+  # Innovus version to use.
+  # Used to locate the binary - e.g. the '221' in ${cadence.cadence_home}/DDI/DDI221/INNOVUS221/bin/innovus
+  version: "231"
+
+  # Design flow effort.
+  # Valid options: express (fastest), standard, and extreme (slowest).
+  design_flow_effort: "standard"
+
+  # Design power effort.
+  # Valid options: none, low, high.
+  design_power_effort: "low"
+
+  # Floorplanning SDC constraints to use.
+  # Valid options are:
+  # - blank - Specify no floorplanning constraints (likely won't work)
+  # - manual - Specify the contents of a manual SDC floorplanning script to use in floorplan_script_contents.
+  # - generate - Generate a floorplan from the hammer-vlsi config/IR.
+  # - auto - Use Innovus's `plan_design` command to auto-generate a floorplan. Will have poor, but sane results
+  #   If you specify this, you must also specify the floorplanning_script config below. The floorplanning_script config will be ignored in other modes.
+  # TODO(edwardw): Put in new floorplanning thing here when done.
+  floorplan_mode: generate
+  floorplan_script_contents: null
+
+  # Use "clock concurrent optimization" in clock tree synthesis.
+  # If true, uses the ccopt_design command which includes this feature
+  # by default in Innovus Common UI.
+  # Note that this requires an optional licence (enccco).
+  # type: bool
+  use_cco: true
+
+  # Route bumps with early global router (version >= 23.1 only).
+  # By default, bumps are ignored for routing. If true, turn on early bump routing.
+  # This is useful for RC delay estimation if you don't have IO cells routed to bumps via the flip-chip router.
+  early_route_bumps: false
+
+  # Perform signoff timing, then timing/DRV/power optimization with opt_signoff.
+  # Should only be run at the very end, as runtime impact is significant.
+  # Requires the same version of Tempus to be installed at ${cadence.cadence_home}/SSV/SSV${par.innovus.bin}/bin
+  signoff: false

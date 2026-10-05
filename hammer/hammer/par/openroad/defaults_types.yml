@@ -1,0 +1,63 @@
+# Default types of all of the configuration options for OpenROAD's par tools
+#   specified in defaults.yml
+
+par.openroad:
+  openroad_bin: str
+  version: str
+
+  klayout_bin: str
+
+  generate_only: bool
+
+  create_archive_mode: str
+
+  fast_flow: false
+
+  write_reports: bool
+
+  floorplan_mode: str
+
+  floorplan_script_contents: Optional[str] 
+
+  floorplan_origin_pos: str
+
+  setrc_file: Optional[str]
+
+  openrcx_techfiles: Optional[list[str]]
+
+  klayout_techfile_source: Optional[str]
+
+  def2stream_file: str
+
+  # Step parameter configurations
+  macro_placement:
+    halo: list[int]
+    channel: Optional[list[int]]
+    snap_layer: str
+    orient_all: str
+
+  global_placement:
+    timing_driven: bool
+    routability_driven: bool
+    density: float
+    placement_padding: int
+    routing_adjustment: float
+  
+  detailed_placement:
+    placement_padding: int
+
+  clock_tree:
+    placement_padding: int
+  
+  clock_tree_resize:
+    setup_margin: float
+    hold_margin: float
+    hold_max_buffer_percent: int
+    placement_padding: int
+  
+  global_route: 
+    routing_adjustment: float
+  
+  global_route_resize:
+    hold_margin: float
+    routing_adjustment: float

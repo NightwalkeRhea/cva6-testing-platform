@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "hammer-example"
+version = "0.0.1"
+description = "Hammer example repo for hammer-vlsi"
+authors = ["Daniel Grubb <dpgrubb@berkeley.edu>", "Vighnesh Iyer <vighnesh.iyer@berkeley.edu>"]
+maintainers = ["Daniel Grubb <dpgrubb@berkeley.edu>"]
+readme = "README.md"
+repository = "https://github.com/ucb-bar/hammer"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+hammer-vlsi = {path = "../.", extras = ["asap7"], develop = true}
+hammer-mentor-plugins = {path = "hammer-mentor-plugins", develop = true}
+
+[build-system]
+requires = ["poetry-core>=1.0.8", "setuptools>=65.3"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+envlist = py39,py310
+isolated_build = True
+
+[testenv]
+deps = pytest
+commands =
+  pytest tests/ {posargs}
+"""

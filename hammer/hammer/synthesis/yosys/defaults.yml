@@ -1,0 +1,15 @@
+# Configuration options and defaults for OpenROAD-flow's yosys.
+# The values specified in this file are the defaults.
+
+synthesis.yosys:
+  yosys_bin: "yosys" # Location of the binary.
+  version: "dummy-value" # this is just to make hammer happy (although, it is never called AFAICT).
+  # the version is actually calculated by the OpenROADTool class
+
+  generate_only: false # Generate the input scripts but don't run anything
+  # TODO: make this tool-independent?
+
+  latch_map_file: null # Optional: Latch map file
+  # type: Optional[str]
+  # Used by Yosys to do technology mapping of latches
+  # Should be set in technology plugin

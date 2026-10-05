@@ -1,0 +1,3 @@
+par.mockpar:
+  temp_folder: null # A folder where mockpar can create files.
+
