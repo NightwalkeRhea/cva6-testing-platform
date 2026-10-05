@@ -1,0 +1,13 @@
+[Citation]
+Type = Conference Paper
+Title = Advances in Testing and Reliability Benchmarks
+Authors = Francesco Angione; Paolo Bernardi; Nicola Di Gruttola Giardino; Gabriele Filipponi; Giusy Iaria; Giacomo Perlo; Irith Pomeranz; Antonio Porsia; Annachiara Ruospo; Ernesto Sanchez; Vittorio Turco
+Booktitle = 2026 IEEE European Test Symposium (ETS)
+Year = 2026
+Pages = 1-10
+DOI = 10.1109/ETS69887.2026.11591740
+Keywords = Modeling; Testing; Design methodology; Hardware; Complexity theory; Printing; Simulation; Accuracy; Computer architecture; Architecture; Testing; Reliability; Benchmarks; RISC-V
+
+[Repository]
+Format = Simple File Format (SFF)
+Source = IEEE Xplore

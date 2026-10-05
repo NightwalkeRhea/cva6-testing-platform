@@ -1,0 +1,303 @@
+#!/usr/bin/env python3
+#
+# NOTE: this ExampleDriver works for CVA6 ONLY. 
+
+import os
+from hammer.vlsi import CLIDriver, HammerTool, HammerToolHookAction, HammerDriver
+from hammer.vlsi.cli_driver import CLIActionConfigType
+import re
+from pathlib import Path
+
+
+from typing import Dict, Callable, Optional, List, Any
+
+def add_options(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.technology") == "hammer.technology.asap7":
+        # Needed by design compiler because asap7 has no three state cells
+        if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+            x.append("set_app_var compile_assume_fully_decoded_three_state_busses true")
+    if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+        x.append("set_app_var compile_assume_fully_decoded_three_state_busses true")
+        x.append("set_app_var test_validate_test_model_connectivity true")
+        # To correctly solve FF primitives
+        x.append("set_app_var compile_seqmap_identify_shift_registers_with_synchronous_logic true")
+        x.append("set_app_var compile_seqmap_identify_shift_registers true")
+        x.append("set_app_var hdlin_elaborate_black_box \"tc_sram\"")
+        x.append("set_app_var verilogout_no_tri true")
+        x.append("# Preserve FF with not load used as spare")
+        x.append("set_app_var hdlin_preserve_sequential ff+loop_variables")
+        x.append("set_app_var test_setup_additional_clock_pulse true")
+        x.append("set_app_var compile_seqmap_propagate_high_effort false")
+        x.append("set_app_var compile_restructure_sync_set_reset true")
+        x.append("set_app_var compile_seqmap_propagate_constants false")
+    return True 
+
+def dont_touch_srams(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+        # The following can be summarized in x.append("set_app_var hdlin_elaborate_black_box \"tc_sram\"") during initialization
+        # x.append("foreach_in_collection ram [filter_collection [get_cells -hierarchical *] {full_name =~ \"*tc_sram\" }] {")
+        # x.append("set_attribute $ram is_memory_cell true")
+        # x.append("set_attribute $ram is_physical_black_box true" )
+        # x.append("set_attribute $ram is_logical_black_box true" )
+        # x.append("set_dont_touch $ram")
+        # x.append("}")
+        #x.append("set_app_var hdlin_sv_interface_only_modules {filter_collection [get_cells -hierarchical *] {full_name =~ \"*tc_sram\" }}")
+        # x.append("foreach_in_collection ram [get_references -hierarchical \"*hpdcahce_sram_1rw*\"] {")
+        # x.append("set_attribute $ram is_memory_cell true")
+        # x.append("set_attribute $ram is_physical_black_box true" )
+        # x.append("set_dont_touch $ram")
+        # x.append("}")
+    
+        # x.append("foreach_in_collection ram [get_references -hierarchical \"*hpdcache_sram_wmask_1rw*\"] {")
+        # x.append("set_attribute $ram is_memory_cell true")
+        # x.append("set_attribute $ram is_physical_black_box true" )
+        # x.append("set_dont_touch $ram")
+        # x.append("}")
+        pass
+    
+    return True
+
+def connect_clk_en_reg(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.technology") == "hammer.technology.asap7":
+        x.append("set test_fix_bus true")
+        if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+            x.append("disconnect_net [all_connected clock_en_reg/RESET] clock_en_reg/RESET")
+            x.append("connect_pin -from [get_nets n_debug_reset_syncd_debug_reset_sync_io_q ] -to clock_en_reg/RESET ")
+    return True
+
+def set_false_path(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+        # Depending on the configuration, the caches may be present or not
+        x.append("set_input_delay -clock [get_clocks clock_uncore] -max 0.1 [get_pins \"system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_wt_dcache/i_wt_dcache_mem/gen_tag_srams_*__i_tag_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/rdata_o[*]\"]")
+        x.append("set_input_delay -clock [get_clocks clock_uncore] -max 0.1 system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_wt_dcache/i_wt_dcache_mem/gen_data_banks_*__i_data_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/rdata_o[*]")
+        x.append("set_input_delay -clock [get_clocks clock_uncore] -max 0.1 system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_cva6_icache/gen_sram_*__data_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/rdata_o[*]")
+        x.append("set_input_delay -clock [get_clocks clock_uncore] -max 0.1 system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_cva6_icache/gen_sram_*__tag_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/rdata_o[*]")
+        x.append("set_output_delay 0.01 -max -clock [get_clocks clock_uncore] system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_wt_dcache/i_wt_dcache_mem/gen_tag_srams_*__i_tag_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/addr_i[*]")
+        x.append("set_output_delay 0.01 -max -clock [get_clocks clock_uncore] system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_wt_dcache/i_wt_dcache_mem/gen_data_banks_*__i_data_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/addr_i[*]")
+        x.append("set_output_delay 0.01 -max -clock [get_clocks clock_uncore] system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_cva6_icache/gen_sram_*__data_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/addr_i[*]")
+        x.append("set_output_delay 0.01 -max -clock [get_clocks clock_uncore] system/tile_prci_domain/element_reset_domain_cva6_tile/core/i_ariane/i_cva6/gen_cache_wt_i_cache_subsystem/i_cache_subsystem/i_cva6_icache/gen_sram_*__tag_sram/gen_cut_*__gen_mem_i_tc_sram_wrapper/addr_i[*]")
+        x.append("set_false_path -to [get_ports {system/tile_prci_domain/element_reset_domain_cva6_tile/core/rvfi_probes_o}]")
+    return True
+
+def connect_test_mode_signals(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+        # Connect top level black box's signals (unconnected) to scan signals
+        x.append("set pins [get_pins -hierarchical *test_en_i*]")
+        x.append("foreach_in_collection pin $pins {")
+        x.append("disconnect_net [all_connected $pin] $pin")
+        x.append("connect_pin -from [get_port test_mode ] -to $pin -port_name test_en_i_custom_i")
+        x.append("}")
+
+        x.append("set pins [get_pins -hierarchical *test_mode_i*]")
+        x.append("foreach_in_collection pin $pins {")
+        x.append("disconnect_net [all_connected $pin] $pin")
+        x.append("connect_pin -from [get_port test_mode ] -to $pin -port_name test_mode_i_custom_i")
+        x.append("}")
+
+        x.append("disconnect_net [all_connected gated_clock_debug_clock_gate/test_en] gated_clock_debug_clock_gate/test_en")
+        x.append("connect_pin -from [get_port test_mode ] -to gated_clock_debug_clock_gate/test_en -port_name test_en_i_custom")
+
+        x.append("set_dft_drc_rules -ignore {TEST-504}")
+        x.append("set_dft_drc_rules -ignore {TEST-505}")
+        # Why Do I Get TEST-504 or TEST-505 Violations on Test Model Segments?
+        # There is an unexpected inversion on the reset line between the top-level and the block-level. 
+        x.append("disconnect_net [all_connected system/tile_prci_domain/element_reset_domain_cva6_tile/core/rst] system/tile_prci_domain/element_reset_domain_cva6_tile/core/rst")
+        x.append("connect_pin -from [get_port reset_io ] -to system/tile_prci_domain/element_reset_domain_cva6_tile/core/rst -port_name reset_core_i")
+
+    return True 
+
+
+def insert_internal_memory_collar(x: HammerTool) -> bool:
+    if x.get_setting("vlsi.core.synthesis_tool") == "hammer.synthesis.dc":
+        if x.get_setting("synthesis.insert_dft.memory_wrapper"):
+            x.append(x.insert_test_points(["\"*tc_sram*\"", "\"*tc_sram\"", # "\"*sram_cache*\"",
+                                            "\"*hpdcache_sram_wbyteenable_1rw_00000007_00000040_00000080*\"",
+                                            "\"*hpdcache_sram_1rw_00000006_0000001c_00000040*\"",
+                                            "\"*hpdcahce_sram_1rw*\"",
+                                            "\"*hpdcache_sram_wmask_1rw*\"",
+                                           ]))   
+    if x.get_setting("vlsi.core.technology") == "hammer.technology.asap7":
+        x.append("identify_clock_gating")
+    return True
+
+
+def insert_nofaults_modules(x: HammerTool) -> bool:
+    # Do not add faults around the following modules
+    x.additional_modules = [".*tc_sram.*", ".*sram_cache.*", 
+                                ".*hpdcache_sram_wbyteenable_1rw_00000007_00000040_00000080.*",
+                                ".*hpdcache_sram_1rw_00000006_0000001c_00000040.*",
+                                ".*hpdcahce_sram_1rw.*",
+                                ".*hpdcache_sram_wmask_1rw.*",]
+    return True
+
+
+def remove_modules_streamed(
+    file_path: str | Path,
+    module_names: list[str] | set[str],
+) -> None:
+    """Remove specific modules from a Verilog/SystemVerilog file.
+
+    The input file is processed line by line to keep memory usage low.
+    Matching modules are written neither to the temporary file nor to the
+    final file.
+
+    A temporary file is created next to the input file. Once processing
+    completes successfully, the temporary file atomically replaces the
+    original input file.
+
+    Parameters
+    ----------
+    file_path
+        Path to the Verilog/SystemVerilog file to modify.
+
+    module_names
+        List or set containing the exact names of modules to remove.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``file_path`` does not exist.
+
+    ValueError
+        If ``module_names`` is empty.
+    """
+    input_path = Path(file_path)
+
+    if not input_path.is_file():
+        raise FileNotFoundError(f"Input file does not exist: {input_path}")
+
+    if not module_names:
+        raise ValueError("module_names must contain at least one module name")
+
+    # A set provides O(1) average lookup for module names.
+    module_names = set(module_names)
+
+    # Temporary file in the same directory as the input file.
+    temp_path = input_path.with_name(input_path.name + ".tmp")
+
+    # Match:
+    #     module foo
+    #     module foo #(...
+    #     module foo (...);
+    module_pattern = re.compile(r"\bmodule\s+([A-Za-z_]\w*)\b")
+    endmodule_pattern = re.compile(r"\bendmodule\b")
+
+    skipping = False
+
+    try:
+        with (
+            input_path.open("r", encoding="utf-8") as infile,
+            temp_path.open("w", encoding="utf-8") as outfile,
+        ):
+            for line in infile:
+                if skipping:
+                    # We are inside a module that should be removed.
+                    if endmodule_pattern.search(line):
+                        skipping = False
+
+                    continue
+
+                match = module_pattern.search(line)
+
+                if match and match.group(1) in module_names:
+                    skipping = True
+
+                    # Handle a module whose declaration and endmodule
+                    # happen to occur on the same line.
+                    if endmodule_pattern.search(line):
+                        skipping = False
+
+                    continue
+
+                outfile.write(line)
+
+        # Processing succeeded, so replace the original file.
+        temp_path.replace(input_path)
+
+    except Exception:
+        # Remove the temporary file if anything goes wrong.
+        if temp_path.exists():
+            temp_path.unlink()
+
+        raise
+
+class ExampleDriver(CLIDriver):
+    def get_extra_synthesis_hooks(self) -> List[HammerToolHookAction]:
+        extra_hooks = [
+            HammerTool.make_post_insertion_hook("init_environment", add_options),
+            HammerTool.make_post_insertion_hook("elaborate_design", dont_touch_srams),
+            HammerTool.make_post_insertion_hook("apply_constraints", set_false_path),
+            HammerTool.make_pre_insertion_hook("configure_dft", connect_clk_en_reg),
+            HammerTool.make_post_insertion_hook("configure_dft", connect_test_mode_signals),
+            HammerTool.make_post_insertion_hook("configure_dft", insert_internal_memory_collar)
+        ]
+        return extra_hooks
+    
+    # Customized synthesis action with a combined post run step for removing empty modules and facilitates lsim and fsim
+    def custom_synthesis_post_run(self, driver: HammerDriver) -> None:
+        """Custom post-synthesis task (e.g., netlist modification)."""
+        try:
+            top_module = driver.syn_tool.top_module
+            mapped_v = os.path.join(driver.obj_dir, "syn-rundir", "results" , f"{top_module}.mapped.v")
+
+            if os.path.exists(mapped_v):
+                driver.syn_tool.logger.info(f"[Post-Synthesis] ,tripping empty SRAM modules from {mapped_v}")
+                remove_modules_streamed(mapped_v, [ 
+                        "tc_sram_00000010_00000031_00000008_00000001_00000001_none_0_1",
+                        "tc_sram_wrapper_256_64_00000008_00000001_00000001_none_0",
+                        "tc_sram_00000010_00000200_00000008_00000001_00000001_none_0_1",
+                        "tc_sram_00000020_00000080_00000008_00000001_00000001_none_0_1",
+                        "tc_sram_00000020_00000030_00000008_00000001_00000001_none_0_1",
+                        "hpdcache_sram_wbyteenable_1rw_00000007_00000040_00000080",
+                        "hpdcache_sram_1rw_00000006_0000001c_00000040",
+                        "hpdcache_sram_1rw",
+                        "tc_sram_00000020_00000080_00000008_00000001_00000001_none_0",
+                        "tc_sram_00000010_00000031_00000008_00000001_00000001_none_0",
+                        "tc_sram_00000020_00000030_00000008_00000001_00000001_none_0",
+                        "tc_sram_00000010_00000200_00000008_00000001_00000001_none_0",
+                        "tc_sram_wrapper_cache_techno_32_00000030_00000008_00000001_00000001_none_0_0",
+                        "tc_sram_wrapper_cache_techno_32_00000080_00000008_00000001_00000001_none_0_0",
+                        "tc_sram_wrapper_cache_techno_00000010_00000200_00000008_00000001_00000001_none_1_0",
+                        "tc_sram_wrapper_cache_techno_00000010_00000031_00000008_00000001_00000001_none_0_0",
+                        "tc_sram_wrapper_256_64_00000008_00000001_00000001_none_0_0",
+                ])
+            else:
+                driver.syn_tool.logger.warning(f"[Post-Synthesis] Netlist not found at: {mapped_v}")
+        except Exception as e:
+            driver.syn_tool.logger.error(f"[Post-Synthesis] Exception during netlist processing: {e}")
+
+    # Override internal declaration in CLIDriver 
+    def create_synthesis_action(
+        self,
+        custom_hooks: List[HammerToolHookAction],
+        pre_action_func: Optional[Callable[[HammerDriver], None]] = None,
+        post_load_func: Optional[Callable[[HammerDriver], None]] = None,
+        post_run_func: Optional[Callable[[HammerDriver], None]] = None
+    ) -> CLIActionConfigType:
+
+        # Combine passed post_run_func argument with the custom post-run logic
+        def combined_post_run(driver: HammerDriver) -> None:
+            # 1. Execute passed post_run_func argument (if supplied)
+            if post_run_func is not None:
+                post_run_func(driver)
+
+            # 2. Execute custom post-run logic
+            self.custom_synthesis_post_run(driver)
+
+        # Delegate to super with the combined callback
+        return super().create_synthesis_action(
+            custom_hooks=custom_hooks,
+            pre_action_func=pre_action_func,
+            post_load_func=post_load_func,
+            post_run_func=combined_post_run
+        )
+    
+    def get_extra_atpg_hooks(self) -> List[HammerToolHookAction]:
+        extra_hooks = [
+            HammerTool.make_pre_insertion_hook("run_atpg", insert_nofaults_modules)
+        ]
+        return extra_hooks
+
+
+if __name__ == '__main__':
+    ExampleDriver().main()

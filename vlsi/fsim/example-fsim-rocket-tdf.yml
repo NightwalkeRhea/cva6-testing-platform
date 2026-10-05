@@ -1,0 +1,25 @@
+fsim.inputs:
+
+  # Optional execution flags for the fault simulator
+  optional_elaboration_flags: ["+vcs+fsdbon"]
+
+
+  # Determine the weights of all the parameters in the test and fault coverage
+  weights: [
+    {fault_class: "PT", weight: "1.0"}
+  ]
+
+  test_coverage: "(DD * DD_weight + DT * DT_weight + DE * DE_weight + DF * DF_weight + PD * PD_weight + PT * PT_weight)/(Total)"
+  fault_coverage: "(DD * DD_weight + DT * DT_weight + DE * DE_weight + DF * DF_weight + PD * PD_weight + PT * PT_weight)/(Total + UB + UI + UR + UT + UU + UO)"
+  
+  # Determines the fault locations and types
+  fault_locations: [
+    {location: "ChipTop.system.tile_prci_domain.element_reset_domain_rockettile.**", 
+              fault_type: "R,F", type_of_fault_location: "PORT", exclude: False},
+  ]
+
+  # Strobe position if strobe file is not provided
+  strobe_modules: [
+    "`TOPLEVEL.system.tile_prci_domain.element_reset_domain_rockettile.core", 
+    "`TOPLEVEL.system.tile_prci_domain.element_reset_domain_rockettile.fpuOpt"
+  ]

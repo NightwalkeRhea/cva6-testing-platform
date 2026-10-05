@@ -1,0 +1,8 @@
+# Technology Setup
+vlsi.core.technology: "hammer.technology.cnfet5"
+
+# technology files installation directory
+technology.cnfet5.install_dir: "/data/libraries/CNFET-OCL/CNFET5"
+
+# For generating fake srams
+vlsi.core.sram_generator_tool: "hammer.sram_generator.generic_generator"

@@ -1,0 +1,49 @@
+# Tool options. Replace with your tool plugin of choice.
+vlsi.core.build_system: make
+# Design Compiler options
+vlsi.core.synthesis_tool: "hammer.synthesis.dc"
+synthesis.dc.version: "SYN_2025.06-SP4"
+synthesis.spyglass.version: "2025.06-SP2"
+synthesis.library_compiler.version: "LC_2025.06-SP2"
+synthesis.library_compiler.lc_bin: "${synopsys.synopsys_home}/LC_${synthesis.library_compiler.version}/bin/lc_shell"
+vlsi.core.synthesis_tool.compile_args : ["-scan", "-incremental", " -no_autoungroup" , "-no_boundary_optimization"]
+vlsi.core.max_threads: 16
+# Innovus options
+vlsi.core.par_tool: "hammer.par.innovus"
+par.innovus.version: "211"
+par.innovus.design_flow_effort: "standard"
+par.inputs.gds_merge: true
+## Calibre options
+#vlsi.core.drc_tool: "hammer.drc.calibre"
+#drc.calibre.version: "2022.2_24.16"
+#vlsi.core.lvs_tool: "hammer.lvs.calibre"
+#lvs.calibre.version: "2022.2_24.16"
+# VCS options
+vlsi.core.sim_tool: "hammer.sim.vcs"
+vlsi.core.fsim_tool: "hammer.fsim.vc_zoix"
+vlsi.core.fsim.max_threads: 16
+fsim.vc_zoix.version: "2025.06-SP2"
+fsim.vc_zoix.vc_zoix_bin: "${synopsys.synopsys_home}/Z01X_${fsim.vc_zoix.version}/bin/vc_zoix"
+fsim.vc_zoix.vcs_bin: "${synopsys.synopsys_home}/VCS_${sim.vcs.version}/bin/vcs"
+fsim.vc_zoix.vc_fcc_bin: "${synopsys.synopsys_home}/Z01X_${fsim.vc_zoix.version}/bin/vc_fcc"
+fsim.vc_zoix.vc_fcm_bin : "${synopsys.synopsys_home}/Z01X_${fsim.vc_zoix.version}/bin/vc_fcm" 
+fsim.vc_zoix.vcs_home : "${synopsys.synopsys_home}/VCS_${sim.vcs.version}"
+fsim.vc_zoix.verdi_home : "${synopsys.synopsys_home}/VERDI_${sim.vcs.version}"
+sim.vcs.version: "2025.06-SP2"
+sim.vcs.vcs_bin: "${synopsys.synopsys_home}/VCS_${sim.vcs.version}/bin/vcs"
+sim.vcs.vcs_home: "${synopsys.synopsys_home}/VCS_${sim.vcs.version}"
+sim.vcs.verdi_home: "${synopsys.synopsys_home}/VERDI_${sim.vcs.version}"
+# Possible choices are hammer.atpg.testmax or hammer.atpg.tessent
+vlsi.core.atpg_tool: "hammer.atpg.testmax"
+atpg.testmax.version: "TMAX_2025.06-SP2"
+atpg.testmax.testmax_bin: "${synopsys.synopsys_home}/${atpg.testmax.version}/bin/tmax2"
+atpg.tessent.version: "TESSENT_2022.3"
+atpg.tessent.tessent_bin: "${mentor.mentor_home}/${atpg.tessent.version}/bin/tessent"
+vlsi.core.timing_tool: "hammer.timing.primetime"
+timing.primetime.primetime_bin: "${synopsys.synopsys_home}/${timing.primetime.version}/bin/pt_shell"
+timing.primetime.version: "PT_2025.06-SP2"
+# Voltus options
+#vlsi.core.power_tool: "hammer.power.voltus"
+#power.joules.version: "211"
+#power.voltus.version: "211_ISR3"
+## NOTE (about VCS+Voltus versions): if using FSDB, the VCS version should be approx 2 years older than the Voltus version for compatibility

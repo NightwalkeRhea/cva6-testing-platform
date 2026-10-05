@@ -1,0 +1,19 @@
+# Technology Setup
+vlsi.core.technology: "hammer.technology.asap7"
+
+# technology files installation directory
+technology.asap7.install_dir: "/data/libraries/asap7/"
+technology.asap7.pdk_install_dir: "/data/libraries/asap7/asap7_pdk_r1p7/"
+technology.asap7.stdcell_install_dir: "/data/libraries/asap7/asap7sc7p5t_27/"
+
+# For generating fake srams
+vlsi.core.sram_generator_tool: "hammer.technology.asap7.sram_compiler"
+
+
+# Used to select the correct liberty files for scan insertion! 
+# CHANGE AT YOUR OWN RISK!
+vlsi:
+  inputs:
+    VDD: "0.7 V"
+    GND: "0.0 V"
+    

@@ -1,0 +1,8 @@
+# Technology Setup
+vlsi.core.technology: "hammer.technology.nangate15"
+
+# technology files installation directory
+technology.nangate15.install_dir: "/data/libraries/NangateOpenCellLibrary_15_45_nm/15nm"
+
+# For generating fake srams
+vlsi.core.sram_generator_tool: "hammer.sram_generator.generic_generator"
