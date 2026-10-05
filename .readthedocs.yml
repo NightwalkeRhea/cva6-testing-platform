@@ -1,0 +1,21 @@
+version: 2
+formats: all
+
+# Set Python version & poetry tools
+build:
+  os: ubuntu-22.04
+  tools:
+    python: '3.10'
+  jobs:
+    post_create_environment:
+      - pip install poetry==1.5.1 myst-parser
+      - pip install virtualenv==20.23.1
+    post_install:
+      # VIRTUAL_ENV needs to be set manually for now.
+      # See https://github.com/readthedocs/readthedocs.org/pull/11152/
+      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH poetry install
+      - python3 -c "from hammer.tech import TechJSON; print(TechJSON.schema_json(indent=2))" > doc/Technology/schema.json
+
+# Build documentation with Sphinx
+sphinx:
+  configuration: doc/conf.py

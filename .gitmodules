@@ -1,0 +1,4 @@
+[submodule "e2e/hammer-mentor-plugins"]
+	path = e2e/hammer-mentor-plugins
+	url = git@github.com:ucb-bar/hammer-mentor-plugins
+	branch = master

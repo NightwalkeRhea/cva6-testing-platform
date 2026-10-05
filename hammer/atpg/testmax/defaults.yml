@@ -1,0 +1,39 @@
+# Default settings for simulation using TestMax
+atpg.testmax:
+
+  set_drc_args: [] # Args for the set_drc command
+  # type: List[str]
+
+  run_drc_args: [] # Args for the run_drc command
+  # type: List[str]
+
+  set_faults_args: [] # Args for the set_faults command 
+  # type: List[str]
+
+  set_atpg_args: [] # Args for the set_atpg command
+  # type: List[str]
+
+  run_atpg_args: [] # Args for the run_atpg command
+  # type: List[str]
+
+  run_fault_sim_args: [] # Args for the run_fault_sim command
+  # type: List[str]
+
+  stil2verilog_options: [] # Optional args for the stil2verilog command
+  # type: List[str]
+
+  build_rules: [] # To set the severity of rules during the build
+  # type: List[dict]
+
+  add_faults_args: [] # Args for the add_faults command
+  # type: List[str]
+
+  time_margin: '50%' # Time margin from the clock value for which a fault is considered a small delay fault
+  # type: str
+  # Location of the binary.
+  testmax_bin: "${synopsys.synopsys_home}/${atpg.testmax.version}/bin/tmax2"
+  testmax_bin_meta: lazysubst
+
+  # TestMax version to use.
+  # Used to locate the binary - e.g. the 'M-2017.03' in ${synopsys.synopsys_home}/vcs/M-2017.03/bin/vcs
+  version: "TMAX_2022.12"
