@@ -1,0 +1,49 @@
+# Local environments
+.venv/
+venv/
+.conda-env/
+.conda-lock-env/
+.env
+.env.local
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Editors and operating systems
+.DS_Store
+*~
+*.swp
+*.swo
+
+# Platform outputs
+/build/
+/results/
+/artifacts/
+
+# MicroGP: configure and build out of source
+/microgp/build/
+
+# Chipyard: generated files for simulation and synthesis
+/testyard/.java_tmp/
+/testyard/sims/vcs/generated-src*/
+/testyard/sims/vcs/output/
+/testyard/sims/vcs/simv-*
+/testyard/sims/vcs/csrc/
+/testyard/sims/vcs/ucli.key
+/testyard/sims/vcs/DVEfiles/
+/testyard/sims/verilator/generated-src*/
+/testyard/sims/verilator/output/
+/testyard/sims/verilator/simulator-*
+/testyard/vlsi/generated-src*/
+/testyard/vlsi/build-*/
+/testyard/vlsi/tech-*-cache/
+/testyard/vlsi/output/
+/testyard/vlsi/fsim-output/
+
+# Waveforms
+*.vcd
+*.fsdb
+*.vpd
