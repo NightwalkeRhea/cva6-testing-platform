@@ -1,0 +1,148 @@
+vlsi.core.max_threads: 12
+
+# General Hammer Inputs
+
+
+# Specify clock signals
+vlsi.inputs.clocks: [
+  {name: "clock_uncore", period: "1ns", uncertainty: "0.001ns"}
+]
+
+vlsi.inputs.resets: [
+  {name: "reset_io", active_negated: "false", "synchronous" : "false"}
+]
+# Generate Make include to aid in flow
+vlsi.core.build_system: make
+
+# Custom compile options 
+
+vlsi.core.synthesis_tool.compile_args : ["-scan", "-incremental", "-no_autoungroup" , "-gate_clock", "-no_boundary_optimization"]
+
+# Adding clock gating capabilties during the synthesis
+synthesis.clock_gating_mode : "auto"
+
+
+# Placement Constraints
+# For ASAP7, all numbers must be 4x larger than final GDS
+vlsi.inputs.placement_constraints:
+  - path: "ChipTop"
+    type: toplevel
+    x: 0
+    y: 0
+    width: 800
+    height: 500
+    margins:
+      left: 0
+      right: 0
+      top: 0
+      bottom: 0
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/dcache/data/data_arrays_0/data_arrays_0_ext/mem_0_0"
+    type: hardmacro
+    x: 550
+    y: 25
+    orientation: "r0"
+    top_layer: "M4"
+    master: "SRAM1RW4096x8"
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/dcache/data/data_arrays_0/data_arrays_0_ext/mem_0_1"
+    type: hardmacro
+    x: 550
+    y: 270
+    orientation: "r0"
+    top_layer: "M4"
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/dcache/data/data_arrays_0/data_arrays_0_ext/mem_0_2"
+    type: hardmacro
+    x: 675
+    y: 25
+    orientation: "r0"
+    top_layer: "M4"
+    master: "SRAM1RW4096x8"
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/dcache/data/data_arrays_0/data_arrays_0_ext/mem_0_3"
+    type: hardmacro
+    x: 675
+    y: 270
+    orientation: "r0"
+    top_layer: "M4"
+    master: "SRAM1RW4096x8"
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/frontend/icache/tag_array_0/tag_array_0_ext/mem_0_0"
+    type: hardmacro
+    x: 125
+    y: 150
+    orientation: "my"
+    top_layer: "M4"
+    master: "SRAM1RW64x21"
+  - path: "ChipTop/system/tile_prci_domain/tile_reset_domain_tile/frontend/icache/data_arrays_0_0/data_arrays_0_0_ext/mem_0_0"
+    type: hardmacro
+    x: 0
+    y: 25
+    orientation: "my"
+    top_layer: "M4"
+    master: "SRAM1RW1024x32"
+
+# Pin placement constraints
+vlsi.inputs.pin_mode: generated
+vlsi.inputs.pin.generate_mode: semi_auto
+vlsi.inputs.pin.assignments: [
+  {pins: "*", layers: ["M5", "M7"], side: "bottom"}
+]
+
+# Design Compiler DFT insertion option
+synthesis.dft_insertion : true 
+# Scan configuration 
+synthesis.insert_dft.scan : true 
+synthesis.dft.scan.style : "multiplexed_flip_flop" 
+synthesis.dft.scan.chain_count : 1
+synthesis.dft.scan.ports : [
+  {"name" : "jtag_TDI" , "direction" : "in" , "type": "ScanDataIn"  ,"exist" : true },
+  {"name" : "jtag_TDO" , "direction" : "out" , "type": "ScanDataOut"  ,"exist" : true }
+]
+synthesis.dft.scan.clock_ports: [
+  {"name" : "jtag_TCK", "active_state" : "1", "timings" : ["45" , "95"] },
+  {"name" : "clock_uncore", "active_state" : "1", "timings" : ["45" , "95"] }
+]
+
+synthesis.dft.reset_ports : [
+  {"name" : "reset_io", "active_state" : "1"},
+  {"name" : "jtag_reset", "active_state" : "1"},
+]
+# BSD and JTAG
+synthesis.insert_dft.bsd : false # TODO implement boundary scan insertion during the synthesis 
+synthesis.dft.jtag.clk : "jtag_TCK"
+synthesis.dft.jtag.tdi : "jtag_TDI"
+synthesis.dft.jtag.tdo : "jtag_TDO"
+synthesis.dft.jtag.tms : "jtag_TMS"
+synthesis.dft.jtag.reset : "jtag_reset"
+# Memory Collar configuration 
+synthesis.insert_dft.memory_wrapper : true 
+# Scan compression configuration
+synthesis.insert_dft.scan_compression : false # TODO implement scan compression insertion during the synthesis 
+
+# Set targeted fault coverage and number of generated test patterns from atpg
+atpg:
+  target_coverage: 98.5
+  # Maximum values 
+  max_test_patterns: 0
+
+# Args for the "set_drc" command in TestMAX
+atpg.testmax.set_drc_args: [""]
+# Args for the "run_drc" command in TestMAX, the spf file is automatically taken after the synthesis step
+atpg.testmax.run_drc_args: [""]
+# Args for the "set_atpg" command in TestMAX
+atpg.testmax.set_atpg_args: [""]
+# Args for the "run_atpg" command in TestMAX
+atpg.testmax.run_atpg_args: ["-auto_compression"]
+# Args for the "run_fault_sim" command in TestMAX
+atpg.testmax.run_fault_sim_args: [""]
+# Options args for the "stil2verilog" command called during ATPG with TestMAX, the stil and the testbench name are already embedded, as well as the "-replace" option
+atpg.testmax.stil2verilog_options: [""]
+# To set the severity of rules during the build in TestMAX
+atpg.testmax.build_rules: [
+  {"rule_code" : "B5", "severity" : "warning"},
+]
+# Args for the "add_faults" command in TestMAX
+atpg.testmax.add_faults_args: ["-all"]
+
+# Optional Fault generation options
+fsim.vc_zoix.fcc_additional_args: ["-excludecolloff"]
+
+# No need of def file for timing
+timing.inputs.def_file : ""

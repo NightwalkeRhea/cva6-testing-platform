@@ -1,0 +1,13 @@
+#!/bin/bash
+module load license/default
+module load synopsys/vcs/2025.06-SP2
+module load synopsys/syn/2025.06-SP4
+module load synopsys/tmax/2025.06-SP2
+module load cadence/innovus/19.11_000
+module load synopsys/verdi/2025.06-SP2
+module load synopsys/spyglass/2025.06-SP2
+module load synopsys/zoix/2025.06-SP2
+module load synopsys/primetime/2025.06-SP2
+
+# Library compiler used for asap7 
+module load synopsys/lc/2025.06-SP2
