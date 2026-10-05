@@ -1,0 +1,225 @@
+[submodule "testyard/fpga/fpga-shells"]
+path = testyard/fpga/fpga-shells
+url = https://github.com/chipsalliance/rocket-chip-fpga-shells.git
+
+[submodule "testyard/generators/bar-fetchers"]
+path = testyard/generators/bar-fetchers
+url = https://github.com/ucb-bar/bar-fetchers.git
+
+[submodule "testyard/generators/boom"]
+path = testyard/generators/boom
+url = https://github.com/riscv-boom/riscv-boom.git
+
+[submodule "testyard/generators/caliptra-aes-acc"]
+path = testyard/generators/caliptra-aes-acc
+url = https://github.com/ucb-bar/caliptra-aes-acc.git
+
+[submodule "testyard/generators/constellation"]
+path = testyard/generators/constellation
+url = https://github.com/ucb-bar/constellation.git
+
+[submodule "testyard/generators/cva6"]
+path = testyard/generators/cva6
+url = https://github.com/ucb-bar/cva6-wrapper.git
+
+[submodule "testyard/generators/diplomacy"]
+path = testyard/generators/diplomacy
+url = https://github.com/chipsalliance/diplomacy.git
+
+[submodule "testyard/generators/fft-generator"]
+path = testyard/generators/fft-generator
+url = https://github.com/ucb-bar/FFTGenerator.git
+
+[submodule "testyard/generators/gemmini"]
+path = testyard/generators/gemmini
+url = https://github.com/ucb-bar/gemmini.git
+
+[submodule "testyard/generators/hardfloat"]
+path = testyard/generators/hardfloat
+url = https://github.com/ucb-bar/berkeley-hardfloat.git
+
+[submodule "testyard/generators/ibex"]
+path = testyard/generators/ibex
+url = https://github.com/cad-polito-it/ibex-wrapper.git
+
+[submodule "testyard/generators/icenet"]
+path = testyard/generators/icenet
+url = https://github.com/firesim/icenet.git
+
+[submodule "testyard/generators/mempress"]
+path = testyard/generators/mempress
+url = https://github.com/ucb-bar/mempress.git
+
+[submodule "testyard/generators/nvdla"]
+path = testyard/generators/nvdla
+url = https://github.com/ucb-bar/nvdla-wrapper.git
+
+[submodule "testyard/generators/riscv-sodor"]
+path = testyard/generators/riscv-sodor
+url = https://github.com/ucb-bar/riscv-sodor.git
+
+[submodule "testyard/generators/rocc-acc-utils"]
+path = testyard/generators/rocc-acc-utils
+url = https://github.com/ucb-bar/rocc-acc-utils.git
+
+[submodule "testyard/generators/rocket-chip"]
+path = testyard/generators/rocket-chip
+url = https://github.com/chipsalliance/rocket-chip.git
+
+[submodule "testyard/generators/rocket-chip-blocks"]
+path = testyard/generators/rocket-chip-blocks
+url = https://github.com/chipsalliance/rocket-chip-blocks.git
+
+[submodule "testyard/generators/rocket-chip-inclusive-cache"]
+path = testyard/generators/rocket-chip-inclusive-cache
+url = https://github.com/chipsalliance/rocket-chip-inclusive-cache.git
+
+[submodule "testyard/generators/shuttle"]
+path = testyard/generators/shuttle
+url = https://github.com/ucb-bar/shuttle.git
+
+[submodule "testyard/generators/testchipip"]
+path = testyard/generators/testchipip
+url = https://github.com/cad-polito-it/testchipip.git
+
+[submodule "testyard/sims/firesim"]
+path = testyard/sims/firesim
+url = https://github.com/firesim/firesim.git
+
+[submodule "testyard/software/baremetal-ide"]
+path = testyard/software/baremetal-ide
+url = https://github.com/ucb-bar/Baremetal-IDE.git
+
+[submodule "testyard/software/coremark"]
+path = testyard/software/coremark
+url = https://github.com/ucb-bar/coremark-workload.git
+
+[submodule "testyard/software/embench/embench-iot"]
+path = testyard/software/embench/embench-iot
+url = https://github.com/embench/embench-iot.git
+
+[submodule "testyard/software/firemarshal"]
+path = testyard/software/firemarshal
+url = https://github.com/firesim/FireMarshal.git
+
+[submodule "testyard/software/nvdla-workload"]
+path = testyard/software/nvdla-workload
+url = https://github.com/ucb-bar/nvdla-workload.git
+
+[submodule "testyard/software/spec2017"]
+path = testyard/software/spec2017
+url = https://github.com/ucb-bar/spec2017-workload.git
+
+[submodule "testyard/toolchains/libgloss"]
+path = testyard/toolchains/libgloss
+url = https://github.com/ucb-bar/libgloss-htif.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-isa-sim"]
+path = testyard/toolchains/riscv-tools/riscv-isa-sim
+url = https://github.com/riscv-software-src/riscv-isa-sim.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-openocd"]
+path = testyard/toolchains/riscv-tools/riscv-openocd
+url = https://github.com/riscv/riscv-openocd.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-pk"]
+path = testyard/toolchains/riscv-tools/riscv-pk
+url = https://github.com/riscv-software-src/riscv-pk.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-spike-devices"]
+path = testyard/toolchains/riscv-tools/riscv-spike-devices
+url = https://github.com/ucb-bar/spike-devices.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-tests"]
+path = testyard/toolchains/riscv-tools/riscv-tests
+url = https://github.com/riscv-software-src/riscv-tests.git
+
+[submodule "testyard/toolchains/riscv-tools/riscv-tools-feedstock"]
+path = testyard/toolchains/riscv-tools/riscv-tools-feedstock
+url = https://github.com/ucb-bar/riscv-tools-feedstock.git
+
+[submodule "testyard/tools/DRAMSim2"]
+path = testyard/tools/DRAMSim2
+url = https://github.com/firesim/DRAMSim2.git
+
+[submodule "testyard/tools/axe"]
+path = testyard/tools/axe
+url = https://github.com/CTSRD-CHERI/axe.git
+
+[submodule "testyard/tools/cde"]
+path = testyard/tools/cde
+url = https://github.com/chipsalliance/cde.git
+
+[submodule "testyard/tools/circt"]
+path = testyard/tools/circt
+url = https://github.com/llvm/circt.git
+
+[submodule "testyard/tools/install-circt"]
+path = testyard/tools/install-circt
+url = https://github.com/circt/install-circt.git
+
+[submodule "testyard/tools/rocket-dsp-utils"]
+path = testyard/tools/rocket-dsp-utils
+url = https://github.com/ucb-bar/rocket-dsp-utils.git
+
+[submodule "testyard/tools/torture"]
+path = testyard/tools/torture
+url = https://github.com/ucb-bar/riscv-torture.git
+
+[submodule "testyard/tools/dsptools"]
+path = testyard/tools/dsptools
+url = https://github.com/ucb-bar/dsptools.git
+
+[submodule "testyard/tools/fixedpoint"]
+path = testyard/tools/fixedpoint
+url = https://github.com/ucb-bar/fixedpoint.git
+
+[submodule "testyard/generators/rerocc"]
+path = testyard/generators/rerocc
+url = https://github.com/ucb-bar/rerocc.git
+
+[submodule "testyard/generators/compress-acc"]
+path = testyard/generators/compress-acc
+url = https://github.com/ucb-bar/compress-acc.git
+
+[submodule "testyard/generators/saturn"]
+path = testyard/generators/saturn
+url = https://github.com/ucb-bar/saturn-vectors.git
+
+[submodule "testyard/software/firesim-paper-workloads"]
+path = testyard/software/firesim-paper-workloads
+url = https://github.com/firesim/firesim-paper-workloads.git
+
+[submodule "testyard/generators/ara"]
+path = testyard/generators/ara
+url = https://github.com/ucb-bar/ara-wrapper.git
+
+[submodule "testyard/tools/firrtl2"]
+path = testyard/tools/firrtl2
+url = https://github.com/ucb-bar/firrtl2.git
+
+[submodule "testyard/generators/vexiiriscv"]
+path = testyard/generators/vexiiriscv
+url = https://github.com/ucb-bar/vexiiriscv-tile.git
+
+[submodule "testyard/software/zephyrproject/zephyr"]
+path = testyard/software/zephyrproject/zephyr
+url = https://github.com/ucb-bar/zephyr.git
+
+[submodule "testyard/software/tacit_decoder"]
+path = testyard/software/tacit_decoder
+url = https://github.com/riscv-tacit/tacit_decoder.git
+
+[submodule "testyard/generators/tacit"]
+path = testyard/generators/tacit
+url = https://github.com/riscv-tacit/tacit.git
+
+[submodule "testyard/generators/radiance"]
+path = testyard/generators/radiance
+url = https://github.com/ucb-bar/radiance.git
+
+[submodule "hammer/e2e/hammer-mentor-plugins"]
+path = hammer/e2e/hammer-mentor-plugins
+url = git@github.com:ucb-bar/hammer-mentor-plugins
+branch = master
+
