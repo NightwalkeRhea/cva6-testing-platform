@@ -143,3 +143,8 @@ add_custom_target(spiflash_img ALL
 #################################
 
 add_subdirectory(sbst)
+
+#################################
+# Build the RAW hazard test
+#################################
+add_subdirectory(raw-hazard)
