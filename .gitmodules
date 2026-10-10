@@ -20,7 +20,7 @@ url = https://github.com/ucb-bar/constellation.git
 
 [submodule "testyard/generators/cva6"]
 path = testyard/generators/cva6
-url = https://github.com/ucb-bar/cva6-wrapper.git
+url = git@github.com:NightwalkeRhea/cva6-wrapper.git
 
 [submodule "testyard/generators/diplomacy"]
 path = testyard/generators/diplomacy
