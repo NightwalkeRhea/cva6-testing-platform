@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Begin with one small generation. Increase these values only after the
+     seed and one generated program both pass. -->
+<parameters type="enhanced">
+  <!-- Keep eight parents from one generation to the next. -->
+  <mu value="8" />
+  <!-- Create eight children before selection. -->
+  <nu value="8" />
+  <!-- Allow four extra candidates during the generation. -->
+  <lambda value="4" />
+  <!-- Stop after one generation while we validate the flow. -->
+  <maximumGenerations value="1" />
+  <!-- Never score more than twelve programs in this first test. -->
+  <maximumEvaluations value="12" />
+  <!-- Stop a stuck run after eight hours. -->
+  <maximumTime hours="8" />
+  <!-- These two values control how strongly variation changes programs. -->
+  <sigma value="0.9" />
+  <inertia value="0.9" />
+  <!-- Remove individuals that survive too long without improvement. -->
+  <maximumAge value="3" />
+  <!-- Always keep the best program. -->
+  <eliteSize value="1" />
+  <!-- Do not change a score merely because two programs match. -->
+  <cloneScalingFactor value="0.0" />
+  <!-- Keep a score valid until the program itself changes. -->
+  <invalidateFitnessAfterGeneration value="0" />
+  <!-- Compare small groups and keep the program with better coverage. -->
+  <selection type="tournamentWithFitnessHole" tau="2" tauMin="1" tauMax="1" fitnessHole="0" />
+  <!-- Each program returns one value: fault coverage. -->
+  <fitnessParameters value="1" />
+  <!-- genome.xml defines the allowed RAW patterns. -->
+  <constraints value="genome.xml" />
+
+  <!-- Tell MicroGP how to call our Python evaluator. -->
+  <evaluation>
+    <!-- Run one expensive Z01X job at a time. -->
+    <concurrentEvaluations value="1" />
+    <!-- Keep generated files while we inspect the first run. -->
+    <removeTempFiles value="false" />
+    <!-- Pass each generated assembly file to evaluate.py. -->
+    <evaluatorPathName value="python3 evaluate.py" />
+    <evaluatorInputPathName value="individual%s" />
+    <!-- evaluate.py writes one percentage per program here. -->
+    <evaluatorOutputPathName value="fitness.output" />
+  </evaluation>
+
+  <!-- Enable only the basic ways to change a program. -->
+  <operators default="none">
+    <!-- Join pieces from two programs. -->
+    <operator ref="onePointImpreciseCrossover" />
+    <!-- Change an instruction choice or an immediate value. -->
+    <operator ref="singleParameterAlterationMutation" />
+    <!-- Add, remove, replace, or move a complete RAW pattern. -->
+    <operator ref="insertionMutation" />
+    <operator ref="removalMutation" />
+    <operator ref="replacementMutation" />
+    <operator ref="swapMutation" />
+    <!-- Create the first random programs. -->
+    <operator ref="randomizer" />
+  </operators>
+</parameters>

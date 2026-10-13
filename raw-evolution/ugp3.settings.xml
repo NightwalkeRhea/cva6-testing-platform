@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+  <!-- Configure the main evolution run. -->
+  <context name="evolution">
+    <!-- Use the same random choices on every repeated run. -->
+    <option name="randomSeed" value="946094937" />
+    <!-- Load the one population used for RAW programs. -->
+    <option name="populations"><population name="raw" value="population.settings.xml" /></option>
+    <!-- Save progress from each generation in a simple table. -->
+    <option name="statisticsPathName" value="statistics.csv" />
+  </context>
+  <!-- Save enough state to resume an interrupted run. -->
+  <context name="recovery"><option name="recoveryOutput" value="status.xml" /></context>
+  <!-- Print useful progress without full debug noise. -->
+  <context name="logging"><option name="std::cout" value="info; brief" /></context>
+</settings>

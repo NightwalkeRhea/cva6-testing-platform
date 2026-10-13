@@ -1,0 +1,11 @@
+# Each candidate gets a directory with binaries, Tcl, and logs.
+runs/
+# Python creates this cache while it imports config.py.
+__pycache__/
+# select_faults.py generates this list from the saved report.
+faults.csv
+# MicroGP writes the scores here after each evaluation.
+fitness.output
+# MicroGP uses these files to resume and report a run.
+status.xml
+statistics.csv

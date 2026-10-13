@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Each macro is a complete RAW pattern. A consumer always reads the value
+     made by its producer, so mutation cannot remove the dependency. -->
+<constraints id="RAW">
+  <!-- Define the instruction names that mutations may choose. -->
+  <typeDefinitions>
+    <!-- These operations read two registers. -->
+    <item type="constant" name="alu_op">
+      <value>add</value><value>sub</value><value>xor</value>
+      <value>or</value><value>and</value><value>slt</value>
+    </item>
+    <!-- These operations read one register and one immediate value. -->
+    <item type="constant" name="imm_op">
+      <value>addi</value><value>xori</value><value>ori</value><value>andi</value>
+    </item>
+  </typeDefinitions>
+
+  <!-- Tell MicroGP how to print its own labels and comments. -->
+  <commentFormat># <value /></commentFormat>
+  <identifierFormat>n<value /></identifierFormat>
+  <labelFormat><value />:</labelFormat>
+  <uniqueTagFormat><value /></uniqueTagFormat>
+  <prologue id="globalPrologue" />
+  <epilogue id="globalEpilogue" />
+
+  <!-- This flow needs only one assembly section. -->
+  <sections>
+    <section id="raw" prologueEpilogueCompulsory="false">
+      <!-- Open the function and save its input. -->
+      <prologue id="sectionPrologue">
+        <expression>    .option nopic
+    .text
+    .align 2
+    .globl raw_body
+    .type raw_body, @function
+raw_body:
+    # Reserve one stack slot for the load-use pattern.
+    addi sp, sp, -16
+    # Save the input before generated code changes registers.
+    sd a0, 0(sp)
+    # Keep the running result in t6.
+    mv t6, a0
+</expression>
+      </prologue>
+      <!-- Return the running result to the C harness. -->
+      <epilogue id="sectionEpilogue">
+        <expression>    mv a0, t6
+    # Release the stack slot.
+    addi sp, sp, 16
+    ret
+    .size raw_body, .-raw_body
+</expression>
+      </epilogue>
+      <subSections>
+        <!-- Every generated program has exactly one body. -->
+        <subSection id="body" maxOccurs="1" minOccurs="1" maxReferences="0">
+          <prologue id="bodyPrologue" />
+          <epilogue id="bodyEpilogue" />
+          <!-- Build a short program from 8 to 64 complete patterns. -->
+          <!-- The average keeps the first trials cheap enough to inspect. -->
+          <macros minOccurs="8" maxOccurs="64" averageOccurs="24" sigma="12">
+            <!-- Produce a value, then consume it on the next instruction. -->
+            <macro id="adjacent" weight="5">
+              <expression>    # Make a new value in t0.
+    <param ref="make"/> t0, t6, <param ref="imm"/>
+    # Read t0 without any gap.
+    <param ref="use"/> t1, t0, t6
+    # Keep this block connected to the next block.
+    xor t6, t6, t1
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="imm" />
+              </parameters>
+            </macro>
+            <!-- Put one unrelated instruction between producer and consumer. -->
+            <macro id="distance_one" weight="3">
+              <expression>    # Make a new value in t2.
+    <param ref="make"/> t2, t6, <param ref="imm"/>
+    # Insert one independent instruction.
+    addi t4, t6, 1
+    # Read t2 after the one-instruction gap.
+    <param ref="use"/> t3, t2, t4
+    # Mix the result into the running value.
+    xor t6, t6, t3
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="imm" />
+              </parameters>
+            </macro>
+            <!-- Make both source registers immediately before their consumer. -->
+            <macro id="two_sources" weight="3">
+              <expression>    # Make the first source.
+    addi t0, t6, <param ref="left"/>
+    # Make the second source.
+    xori t1, t6, <param ref="right"/>
+    # Read both recent sources together.
+    <param ref="use"/> t2, t0, t1
+    # Preserve an effect from this block.
+    xor t6, t6, t2
+</expression>
+              <parameters>
+                <item type="definedType" ref="alu_op" name="use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="left" />
+                <item type="integer" minimum="-2048" maximum="2047" name="right" />
+              </parameters>
+            </macro>
+            <!-- Load a value, then use it in the next ALU operation. -->
+            <macro id="load_use" weight="2">
+              <expression>    # Put the running value in memory.
+    sd t6, 0(sp)
+    # Load that value into t0.
+    ld t0, 0(sp)
+    # Consume the load result immediately.
+    <param ref="use"/> t1, t0, t6
+    # Feed the result into later blocks.
+    xor t6, t6, t1
+</expression>
+              <parameters>
+                <item type="definedType" ref="alu_op" name="use" />
+              </parameters>
+            </macro>
+          </macros>
+        </subSection>
+      </subSections>
+    </section>
+  </sections>
+</constraints>
