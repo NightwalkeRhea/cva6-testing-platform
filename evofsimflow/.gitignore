@@ -1,6 +1,0 @@
-# Machine-specific settings: start from conf/site.example.toml.
-conf/site.toml
-__pycache__/
-# Calibration probes, built on demand.
-probe/*.riscv
-probe/*.dump
