@@ -2,7 +2,7 @@
 SHELL := /usr/bin/env bash
 
 # These names are commands, not files to create.
-.PHONY: help select check prepare seed evolve
+.PHONY: help select check prepare campaign seed evolve
 
 # Show the short path through this flow.
 help:
@@ -10,6 +10,7 @@ help:
 	  'make select  Choose the 500 faults from the saved report' \
 	  'make check   Check tools and campaign files' \
 	  'make prepare Compile the seed and write Tcl without running it' \
+	  'make campaign Compile one pristine fault database' \
 	  'make seed    Compile and score the starting RAW program' \
 	  'make evolve  Run one small MicroGP generation'
 
@@ -24,6 +25,10 @@ check:
 # Compile the seed and create Tcl, but do not start Z01X.
 prepare:
 	python3 evaluate.py --prepare seed.S
+
+# Run vc_fcc once. Candidates copy this clean database.
+campaign:
+	python3 evaluate.py --campaign
 
 # Measure the hand-written program before evolution starts.
 seed:

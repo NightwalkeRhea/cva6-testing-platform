@@ -12,6 +12,10 @@ run synthesis or rebuild the simulator.
 - `evaluate.py` compiles one program and measures coverage.
 - `config.py` holds paths, the fixed seed, and the fault quotas.
 
+The flow runs `vc_fcc` once and saves a pristine database. Before it scores a
+program, it gives that program a private copy. The copy keeps results separate,
+so one program cannot benefit from faults detected by an earlier program.
+
 ## First check on the server
 
 Start from the shell that can run the EDA tools:
@@ -29,11 +33,14 @@ cd raw-evolution
 make select
 make check
 make prepare
+make campaign
 ```
 
 `make prepare` compiles the seed and writes its Tcl file, but runs no faults.
-Review that Tcl file first. After it passes review, `make seed` runs only the
-selected 500 faults. Inspect that result before starting MicroGP.
+Review that Tcl file first. `make campaign` then runs the slow fault compiler
+once. It may take a long time, so run it inside tmux. After it succeeds,
+`make seed` copies the pristine database and runs only the selected 500 faults.
+Inspect that result before starting MicroGP.
 
 ## One small generation
 

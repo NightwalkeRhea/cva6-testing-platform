@@ -1,5 +1,7 @@
 # Each candidate gets a directory with binaries, Tcl, and logs.
 runs/
+# vc_fcc creates this pristine database once.
+campaign-base/
 # Python creates this cache while it imports config.py.
 __pycache__/
 # select_faults.py generates this list from the saved report.
