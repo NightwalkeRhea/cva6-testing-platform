@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<parameters xmlns="http://www.cad.polito.it/ugp3/schemas/evolutionary-algorithm" type="enhanced">
+  <cloneScalingFactor value="0"/>
+  <eliteSize value="0"/>
+  <mu value="4"/>  <nu value="4"/>  <lambda value="2"/>
+  <inertia value="0.9"/>
+  <fitnessParameters value="1"/>
+  <maximumAge value="10"/>
+  <sigma value="0.9"/>
+  <invalidateFitnessAfterGeneration value="0"/>
+  <constraints value="constraints.xml"/>
+  <maximumGenerations value="1"/>
+  <selection type="tournamentWithFitnessHole" tau="2" tauMin="1" tauMax="4" fitnessHole="0"/>
+  <evaluation>
+    <cacheSize value="10"/> <cacheSaved value="false"/>
+    <concurrentEvaluations value="1"/>
+    <removeTempFiles value="false"/>
+    <evaluatorPathName value="./fitness.py"/>
+    <evaluatorInputPathName value="i%s.s"/>
+    <evaluatorOutputPathName value="fitness.out"/>
+  </evaluation>
+  <operators default="none">
+    <operator ref="singleParameterAlterationMutation"/>
+  </operators>
+</parameters>

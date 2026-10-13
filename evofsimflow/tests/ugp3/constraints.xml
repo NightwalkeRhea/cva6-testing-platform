@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A correct genome, small enough to read in full: one section, one subSection,
+     one macro, one choice parameter and one integer parameter. catalogue.py
+     breaks it one way at a time to see what uGP3 says. -->
+<constraints xmlns="http://www.cad.polito.it/ugp3/schemas/constraints" id="reference">
+  <typeDefinitions>
+    <item type="constant" name="src">
+      <value>t0</value>
+      <value>t1</value>
+      <value>t3</value>
+    </item>
+  </typeDefinitions>
+  <commentFormat># <value/></commentFormat>
+  <identifierFormat>n<value /></identifierFormat>
+  <labelFormat><value/>: </labelFormat>
+  <uniqueTagFormat><value /></uniqueTagFormat>
+  <prologue id="gp"/>
+  <epilogue id="ge"/>
+  <sections>
+    <section id="body" prologueEpilogueCompulsory="false">
+      <prologue id="sp"><expression>  .text
+</expression></prologue>
+      <epilogue id="se"><expression>  ret
+</expression></epilogue>
+      <subSections>
+        <subSection id="main" maxOccurs="1" minOccurs="1" maxReferences="0">
+          <prologue id="ssp"/>
+          <epilogue id="sse"/>
+          <macros maxOccurs="6" minOccurs="4" averageOccurs="5" sigma="1">
+            <macro id="addi">
+              <!-- The newline belongs inside the expression: uGP3 copies the text
+                   out literally, so without it the whole program is one line. -->
+              <expression>  addi s0,<param ref="rs"/>,<param ref="imm"/>
+</expression>
+              <parameters>
+                <item type="definedType" ref="src" name="rs"/>
+                <!-- Decimal only. "0x11111" is read as 0 and no one is told. -->
+                <item type="integer" name="imm" minimum="-2048" maximum="2047"/>
+              </parameters>
+            </macro>
+          </macros>
+        </subSection>
+      </subSections>
+    </section>
+  </sections>
+</constraints>

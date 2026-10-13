@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<settings>
+  <context name="evolution">
+    <option name="randomSeed" value="42" />
+    <option name="populations"><population name="pop1" value="population.settings.xml" /></option>
+    <option name="statisticsPathName" value="statistics.csv" />
+  </context>
+  <context name="recovery"><option name="recoveryOutput" value="status.xml" /></context>
+  <context name="logging"><option name="std::cout" value="info; brief" /></context>
+</settings>

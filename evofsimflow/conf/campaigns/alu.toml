@@ -1,0 +1,57 @@
+# Faults in the ALU. What a campaign observes is the strobe the fault-aware
+# simulator was built with (flow.py fsim): this file does not choose it.
+
+name = "alu"
+# Names the run directories: evosbst-runs/<date>_<dut>.
+dut  = "alu"
+workspace = "alu_chip"
+# snapshot: hardlinks of the elaborated simulators, so a later rebuild of the
+# flow cannot change what this campaign measures. reference: use them in place.
+workspace_mode = "snapshot"
+
+pipeline = ["build", "probe", "fsim"]
+# Source the Hammer plugin's force_regs.ucli before probe and campaign runs.
+# With register initialisation in the build it changes no number and costs
+# about a sixth of the time.
+force_regs = false
+
+[source]
+rundir   = "fsim-syn-rundir"
+# tcl and sff, left out, are looked for in the rundir as saf/*/fsim.tcl and
+# *.sff; name them once the rundir holds more than one of either.
+sff      = "saf_chiptop0.sff"
+# The name vc_fcc gives the campaign; part of the inputs-hash.
+campaign = "chiptop0"
+
+[probe]
+rundir = "sim-syn-rundir"
+# The only cap that stops a program that never terminates.
+max_cycles = 400000
+
+[fsim]
+# Cycle cap of each campaign: factor x the individual's fault-free run, within
+# [floor, cap].
+cycles_factor = 1.5
+cycles_floor  = 60000
+cycles_cap    = 4000000
+coats = true
+
+[genome]
+# The uGP3 constraints file, written by hand. genome/rv64_alu.toml is the same
+# genome as a short description that evosbst renders into one: name it here
+# to work that way.
+file = "genome/rv64_alu.xml"
+boot = "newlib"
+
+[fitness]
+# Coverage points charged per simulated cycle, inside the score: uGP3 compares
+# lexicographically and coverage never ties, so a component of its own would
+# never be read. 1e-5: ten thousand cycles must earn a tenth of a point.
+# Higher pushes towards short programs; 0 scores coverage alone.
+cycle_price = 1e-5
+
+[ga]
+# The uGP3 population settings, written by hand. A key set here overrides the
+# file: mu nu lambda generations max_evaluations max_hours sigma inertia
+# max_age elite clone_scaling tau. file = "" renders them from this section.
+file = "conf/population.settings.xml"

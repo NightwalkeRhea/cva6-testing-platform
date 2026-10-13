@@ -1,0 +1,108 @@
+# The one file to edit to change what the flow runs. Every value can also be
+# overridden on the command line (see 'flow.py <command> -h'); this file supplies
+# defaults, it imposes nothing.
+#
+#   PART A  what is being studied   <- the day-to-day knobs
+#   PART B  project constants       (hierarchy, timing: rarely touched)
+
+###############################################################################
+# PART A  WHAT IS BEING STUDIED
+###############################################################################
+
+[study]
+# Program under test: relative to tests/, or absolute.
+binary = "hello.riscv"
+# Module under study. One path drives three things: where to dump, where values
+# are strobed, and by default where faults are injected. An alias from
+# [hierarchy.aliases], or a path relative to the CVA6 core.
+dut = "alu"
+# Where to inject faults. Empty means the same as dut.
+faults = ""
+# module: $fs_strobe(<dut>), every port of it -- the observability ceiling.
+# ports : $fs_strobe(<dut>.<port>) for each port below -- a realistic signature.
+strobe_scope = "module"
+strobe_ports = ["result_o", "alu_branch_res_o"]
+
+[dump]
+# The .fsdb of 'par -w'.
+#   off  : no waveform
+#   lean : CVA6 core ports + the whole dut
+#   full : the entire testbench (huge and slow; emergencies only)
+mode = "lean"
+# For 'lean', how deep below the core top: 1 is its ports and top-level nets.
+core_depth = 1
+
+[initreg]
+# compile: random | off. It enables register initialisation at elaboration;
+#          without it the runtime value below is ignored (VCS warns VICIU) and
+#          the netlist starts full of X.
+# run    : 0 | 1 | random. The value every register starts from.
+compile = "random"
+run = "0"
+
+[smoke]
+# Every build runs a short program and demands a PASS before the simv is used.
+enabled = true
+test = "hello.riscv"
+max_cycles = 200000
+retries = 3
+
+[fsim]
+model = "saf"          # saf | tdf | sdf | tf
+inject_at = "main"     # main | reset | <absolute cycle>
+task_split = "auto"    # auto | on | off
+
+[cycles]
+# Cycle caps (+max-cycles). The flow's own TIMEOUT_CYCLES means "forever".
+par = 20000000
+fsim = 36000000
+probe = 1000000
+
+[run]
+# Parallel simulations in 'par'. Each one holds a VCS licence.
+jobs = 16
+# Source the register-forcing script the Hammer plugin writes (force_regs.ucli)
+# before every direct simv run. With initreg on it changes nothing measured and
+# only costs time, so it is off.
+force_regs = false
+
+###############################################################################
+# PART B  PROJECT CONSTANTS
+###############################################################################
+
+[design]
+benchmark = "cva6"
+technology = "nangate45"
+long_name = "chipyard.harness.TestHarness.CVA6Config"
+build_prefix = "build-nangate45-commercial-cva6"
+gen_src_prefix = "generated-src-nangate45"
+# Passed to Hammer through EXTRA_CONFS by every command that calls make.
+overlay = "./example-designs/cva6-nangate45-commercial.yml"
+# Paths relative to vlsi/.
+tools_conf = "example-tools.yml"
+strobe_template = "fsim/strobe/strobe_cva6.sv"
+fsim_tcl_template = "fsim/script/fsim.tcl"
+fault_models = ["saf", "tdf", "sdf", "tf"]
+
+[timing]
+# From sim-output-full.json, in ns. One cycle is one ns.
+reset_delay_ns = 777.7
+clock_ns = 1.0
+# Absolute cycle at which main is entered, floored to the thousand. Measured
+# with 'flow.py t2main'; it depends on the netlist and the crt0, not on the
+# program.
+t2main_cycles = 12000
+
+[hierarchy]
+# The synthesis keeps the hierarchy (no auto-ungroup, no boundary
+# optimisation), so these RTL paths exist in the netlist.
+tb_top = "TestDriver.testHarness.chiptop0"
+core = "system.tile_prci_domain.element_reset_domain_cva6_tile.core"
+
+[hierarchy.aliases]
+# Relative to the core. alu2_i does not exist here (SuperscalarEn = 0).
+core = ""
+ariane = "i_ariane"
+cva6 = "i_ariane.i_cva6"
+ex = "i_ariane.i_cva6.ex_stage_i"
+alu = "i_ariane.i_cva6.ex_stage_i.alu_i"

@@ -1,0 +1,53 @@
+# The genome of genome/rv64_alu.xml in short form: evosbst renders it into a
+# uGP3 constraints file when a campaign names this file in [genome]. It only
+# describes one body of single-instruction macros; the XML can say anything
+# uGP3 understands, and its comments explain the choices below.
+
+# Registers the evolved code may write: caller-saved, so nothing to preserve.
+free_regs = ["t0", "t1", "t2", "t3", "t4", "t5", "t6",
+             "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+
+# Accumulator the result of every instruction is folded into.
+acc_reg = "s11"
+
+# fold: none | add | mul
+#   none  only the last value left in each register is observable
+#   add   one instruction, sensitive to every value, not to their order
+#   mul   order-sensitive, but the multiplier is outside the ALU: cycles, no coverage
+fold = "add"
+mix_reg = "s10"
+mix_const = 2654435761
+
+# Macros in the body: drawn around average with sigma, clamped to [min, max],
+# then moved one at a time by insertion and removal mutations.
+[length]
+min = 16
+max = 384
+average = 128
+sigma = 80
+
+[classes.reg]
+kind = "reg"
+weight = 9
+ops = ["add", "sub", "sll", "slt", "sltu", "xor", "srl", "sra", "or", "and",
+       "addw", "subw", "sllw", "srlw", "sraw"]
+
+[classes.imm12]
+kind = "imm12"
+weight = 4
+ops = ["addi", "slti", "sltiu", "xori", "ori", "andi", "addiw"]
+
+[classes.shamt6]
+kind = "shamt6"
+weight = 3
+ops = ["slli", "srli", "srai"]
+
+[classes.shamt5]
+kind = "shamt5"
+weight = 2
+ops = ["slliw", "srliw", "sraiw"]
+
+[classes.upper]
+kind = "upper"
+weight = 1
+ops = ["lui"]
