@@ -1,0 +1,25 @@
+fsim.inputs:
+
+  # Enable the debug support required by Z01X.
+  optional_elaboration_flags: ["+vcs+fsdbon"]
+
+  # Count detected stuck-at faults toward coverage.
+  weights:
+    - {fault_class: "PT", weight: "1.0"}
+
+  test_coverage: "(DD * DD_weight + DT * DT_weight + DE * DE_weight + DF * DF_weight + PD * PD_weight + PT * PT_weight)/(Total)"
+
+  fault_coverage: "(DD * DD_weight + DT * DT_weight + DE * DE_weight + DF * DF_weight + PD * PD_weight + PT * PT_weight)/(Total + UB + UI + UR + UT + UU + UO)"
+
+  # Inject stuck-at-zero and stuck-at-one faults at the scoreboard boundary.
+  fault_locations:
+    - location: "ChipTop.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.**"
+      fault_type: "0,1"
+      type_of_fault_location: "PORT"
+      exclude: false
+
+    # Also inject faults where CVA6 checks operands and RAW dependencies.
+    - location: "ChipTop.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.**"
+      fault_type: "0,1"
+      type_of_fault_location: "PORT"
+      exclude: false

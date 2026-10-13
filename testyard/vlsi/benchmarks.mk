@@ -23,6 +23,17 @@ ifeq ($(benchmark),ibex)
     INPUT_CONFS       ?= $(TOOLS_CONF) $(TECH_CONF) $(DESIGN_CONFS) $(EXTRA_CONFS)
 endif
 
+ifeq ($(benchmark),cva6)
+    CONFIG             = CVA6Config
+    generated_src_name ?= generated-src-$(technology_name)
+    HAMMER_EXEC        = ./vlsi-cva6
+    TOOLS_CONF         ?= example-tools.yml
+    TECH_CONF          ?= ./technology/$(technology_name).yml
+    FSIM_CONF_FILE     ?= ./fsim/example-fsim-$(FAULT_MODEL).yml
+    DESIGN_CONFS       ?= ./example-designs/$(technology_name)-$(toolchain).yml
+    VLSI_OBJ_DIR       ?= build-$(technology_name)-$(toolchain)-$(benchmark)
+    INPUT_CONFS        ?= $(TOOLS_CONF) $(TECH_CONF) $(DESIGN_CONFS) $(EXTRA_CONFS)
+endif
 
 
 ifeq ($(benchmark),rocket)
