@@ -1,5 +1,7 @@
 # Each candidate gets a directory with binaries, Tcl, and logs.
 runs/
+# Keep selected results without adding large reports to Git.
+results/
 # vc_fcc creates this pristine database once.
 campaign-base/
 # Python creates this cache while it imports config.py.

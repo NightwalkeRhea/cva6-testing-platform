@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Begin with one small generation. Increase these values only after the
-     seed and one generated program both pass. -->
+<!-- Run a bounded search after the seed and the small trial both pass. -->
 <parameters type="enhanced">
   <!-- Keep eight parents from one generation to the next. -->
   <mu value="8" />
@@ -8,12 +7,14 @@
   <nu value="1" />
   <!-- Create eight children from that seed. -->
   <lambda value="8" />
-  <!-- Stop after one generation while we validate the flow. -->
-  <maximumGenerations value="1" />
-  <!-- Score the seed and no more than eight children. -->
-  <maximumEvaluations value="9" />
-  <!-- Stop a stuck run after eight hours. -->
-  <maximumTime hours="8" />
+  <!-- Stop when five generations pass without a better score. -->
+  <maximumSteadyStateGenerations value="5" />
+  <!-- Never run more than twenty generations. -->
+  <maximumGenerations value="20" />
+  <!-- Never score more than one hundred unique programs. -->
+  <maximumEvaluations value="100" />
+  <!-- Stop a stuck or unusually slow run after one day. -->
+  <maximumTime hours="24" />
   <!-- These two values control how strongly variation changes programs. -->
   <sigma value="0.25" />
   <inertia value="0.9" />

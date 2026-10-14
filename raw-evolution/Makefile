@@ -13,7 +13,7 @@ help:
 	  'make campaign Compile one pristine fault database' \
 	  'make seed    Score the program placed in generation zero' \
 	  'make smoke   Generate and compile two programs without faults' \
-	  'make evolve  Run one small MicroGP generation'
+	  'make evolve  Evolve programs on the fixed 500 faults'
 
 # Choose a stable set of 500 faults from the saved report.
 select:
@@ -39,7 +39,7 @@ seed:
 smoke:
 	python3 smoke.py
 
-# Run the small trial that population.settings.xml describes.
+# Run the bounded search that population.settings.xml describes.
 evolve:
 	@test -f seed.S || { echo 'missing seed.S'; false; }
 	ugp3 --settingsFile ugp3.settings.xml

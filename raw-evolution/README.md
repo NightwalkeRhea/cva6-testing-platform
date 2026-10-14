@@ -72,11 +72,13 @@ two programs, and the evaluator only compiles them. It returns dummy scores
 and never copies the fault database or starts a fault simulation. It also fails
 unless generation zero contains the exact text from `seed.S`.
 
-## One small generation
+## Evolution
 
 ```bash
 make evolve
 ```
 
-The first setup evaluates one program at a time. Each campaign may use up to
-16 workers. Results remain under `runs/`, indexed by the program hash.
+The search evaluates one program at a time. Each campaign may use up to 16
+workers. It stops after 20 generations, 100 unique programs, 24 hours, or five
+generations without a better score. Whichever limit occurs first stops the
+run. Results remain under `runs/`, indexed by the program hash.
