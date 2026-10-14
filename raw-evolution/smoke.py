@@ -31,7 +31,7 @@ def small_population(destination: Path) -> None:
     # Three compilations are enough to exercise generation and mutation.
     text = replace_once(
         text,
-        '<maximumEvaluations value="9" />',
+        '<maximumEvaluations value="100" />',
         '<maximumEvaluations value="2" />',
     )
 

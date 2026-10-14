@@ -26,6 +26,7 @@ CAMPAIGN_INFO = CAMPAIGN_BASE / "campaign.json"
 FCC_OPTIONS = ("-uncontrollability", "-prune", "on", "-collapse", "off")
 # Read counts from the Z01X summary.
 DETECTED = re.compile(r"^#\s+Detected\s+DG\s+(\d+)", re.MULTILINE)
+TOTAL = re.compile(r"^# Number of Faults:\s+(\d+)", re.MULTILINE)
 TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
 NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
 
@@ -229,7 +230,7 @@ def compile_program(source: Path, work: Path) -> Path:
     return binary
 
 
-def write_tcl(path: Path, binary: Path, ids: list[int], report: Path) -> None:
+def write_tcl(path: Path, binary: Path, ids: list[int] | None, report: Path) -> None:
     """Write the small Tcl script that runs one candidate."""
     # Pass the same fixed seed and cycle limit to every program.
     args = " ".join(
@@ -246,8 +247,12 @@ def write_tcl(path: Path, binary: Path, ids: list[int], report: Path) -> None:
         )
     )
 
-    # Z01X expects the IDs as one space-separated Tcl list.
-    selected = " ".join(str(fid) for fid in ids)
+    # Omit -fids only for the final comparison against the complete list.
+    if ids is None:
+        fsim_command = "fsim -verbose -no_coats"
+    else:
+        selected = " ".join(str(fid) for fid in ids)
+        fsim_command = f"fsim -verbose -no_coats -fids {{{selected}}}"
 
     # Keep one test case, one run of the faults, and one final report.
     path.write_text(
@@ -259,8 +264,8 @@ set_config -fsim_mode concurrent
 set_config -update_interval 120
 # Use the candidate as the only test case.
 create_testcases -name raw_candidate -exec {{{config.SIMV}}} -args {{{args}}}
-# Skip COATS and run only our selected fault IDs.
-fsim -verbose -no_coats -fids {{{selected}}}
+# Skip COATS and run the requested fault set.
+{fsim_command}
 # Save the coverage that becomes the fitness value.
 report -campaign {config.CAMPAIGN} -summaryonly -report {{{report}}} -overwrite
 """
@@ -291,18 +296,34 @@ def parse_coverage(report: Path, selected: int) -> float:
     return 100.0 * detected / selected
 
 
-def prepare(source: Path) -> tuple[Path, Path]:
+def parse_full_coverage(report: Path) -> float:
+    """Return detected faults as a percentage of the complete fault list."""
+    text = report.read_text(errors="replace")
+    detected_match = DETECTED.search(text)
+    total_match = TOTAL.search(text)
+    not_attempted_match = NOT_ATTEMPTED.search(text)
+
+    if not detected_match or not total_match:
+        raise ValueError(f"required full-list counts not found in {report}")
+    if not_attempted_match and int(not_attempted_match.group(1)) != 0:
+        raise ValueError(f"full run left faults unattempted: {report}")
+
+    return 100.0 * int(detected_match.group(1)) / int(total_match.group(1))
+
+
+def prepare(source: Path, full: bool = False) -> tuple[Path, Path]:
     """Compile a candidate and write its Tcl without running faults."""
     # The hash gives the same program the same directory every time.
     digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
-    work = RUNS / digest
+    work = RUNS / "full" / digest if full else RUNS / digest
     # Make the directory once and reuse it on later checks.
     work.mkdir(parents=True, exist_ok=True)
 
     # Build the binary before we create the Tcl that refers to it.
     binary = compile_program(source, work)
     tcl = work / "fsim.tcl"
-    write_tcl(tcl, binary, fault_ids(), work / "summary.rpt")
+    ids = None if full else fault_ids()
+    write_tcl(tcl, binary, ids, work / "summary.rpt")
     return work, tcl
 
 
@@ -314,24 +335,24 @@ def compile_smoke(source: Path) -> Path:
     return compile_program(source, work)
 
 
-def score(source: Path) -> float:
+def score(source: Path, full: bool = False) -> float:
     """Run the selected faults and return the coverage percentage."""
-    ids = fault_ids()
+    ids = None if full else fault_ids()
 
     # Use the program text as the cache key.
     digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
-    work = RUNS / digest
+    work = RUNS / "full" / digest if full else RUNS / digest
     report = work / "summary.rpt"
     # A finished report means this exact program was scored before.
     if report.exists():
-        coverage = parse_coverage(report, len(ids))
+        coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
         # A previous run may have stopped after writing the report but before
         # it removed its private database. Finish that cleanup on a cache hit.
         remove_run_data(work)
         return coverage
 
     # Compile the new program and make its Tcl file.
-    work, tcl = prepare(source)
+    work, tcl = prepare(source, full=full)
 
     # Start from the same untouched database for every program.
     # This keeps scores independent without rerunning vc_fcc.
@@ -345,7 +366,7 @@ def score(source: Path) -> float:
     )
 
     # Read the result before removing the large temporary directories.
-    coverage = parse_coverage(report, len(ids))
+    coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
     remove_run_data(work)
 
     # MicroGP maximizes the returned coverage value.
@@ -359,6 +380,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--campaign", action="store_true")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--full", action="store_true")
     parser.add_argument("--compile", type=Path, metavar="SOURCE")
     parser.add_argument("--prepare", type=Path, metavar="SOURCE")
     parser.add_argument("sources", nargs="*", type=Path)
@@ -404,7 +426,7 @@ def main() -> int:
     # Score every program in the order MicroGP supplied them.
     values: list[float] = []
     for source in args.sources:
-        value = score(source)
+        value = score(source, full=args.full)
         values.append(value)
         print(f"{source}: {value:.2f}%")
 
