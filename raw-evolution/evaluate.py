@@ -268,6 +268,14 @@ def prepare(source: Path) -> tuple[Path, Path]:
     return work, tcl
 
 
+def compile_smoke(source: Path) -> Path:
+    """Compile one MicroGP program without preparing or running faults."""
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
+    work = RUNS / "smoke" / digest
+    work.mkdir(parents=True, exist_ok=True)
+    return compile_program(source, work)
+
+
 def score(source: Path) -> float:
     """Run the selected faults and return the coverage percentage."""
     ids = fault_ids()
@@ -308,6 +316,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--campaign", action="store_true")
+    parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--compile", type=Path, metavar="SOURCE")
     parser.add_argument("--prepare", type=Path, metavar="SOURCE")
     parser.add_argument("sources", nargs="*", type=Path)
@@ -333,6 +342,18 @@ def main() -> int:
         work, tcl = prepare(args.prepare)
         print(f"prepared {work}")
         print(f"review {tcl} before running faults")
+        return 0
+    # Compile generated programs and return dummy scores without using Z01X.
+    if args.smoke:
+        if not args.sources:
+            parser.error("--smoke needs at least one assembly file")
+        values = []
+        for source in args.sources:
+            binary = compile_smoke(source)
+            values.append(0.0)
+            print(f"compiled {source}: {binary}")
+        output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
+        output.write_text("".join(f"{value:.6f}\n" for value in values))
         return 0
     # Normal MicroGP use must provide one or more programs.
     if not args.sources:

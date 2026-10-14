@@ -27,7 +27,7 @@ SFF = RUNDIR / "saf_chiptop0.sff"
 #record the old result for every fault, and the selector will read this report when it creates fault.csv
 REPORT = RUNDIR / "saf/raw-hazard/fsim_out.rpt"
 
-# SIMV runs the candidate program with injected faults.
+# SIMV runs the candidate program with injected faults
 SIMV = RUNDIR / "simv"
 
 # DAIDIR holds data that the fault compiler needs for SIMV.

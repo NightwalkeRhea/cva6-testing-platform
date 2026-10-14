@@ -46,6 +46,18 @@ once. It may take a long time, so run it inside tmux. After it succeeds,
 `make seed` copies the pristine database and runs only the selected 500 faults.
 Inspect that result before starting MicroGP.
 
+## Safe MicroGP check
+
+Run MicroGP once without Z01X:
+
+```bash
+make smoke
+```
+
+This command creates a temporary directory under `runs/`. MicroGP generates
+three programs, and the evaluator only compiles them. It returns dummy scores
+and never copies the fault database or starts a fault simulation.
+
 ## One small generation
 
 ```bash
