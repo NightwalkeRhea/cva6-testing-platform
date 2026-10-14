@@ -29,6 +29,8 @@ DETECTED = re.compile(r"^#\s+Detected\s+DG\s+(\d+)", re.MULTILINE)
 TOTAL = re.compile(r"^# Number of Faults:\s+(\d+)", re.MULTILINE)
 TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
 NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
+# This line proves that the strobe reached raw_body and injected faults.
+INJECTION_MARKER = "CVA6 RAW: injecting faults"
 
 # VCS and Z01X install two launchers for the same fault compiler.
 # Compare their release instead of their different launcher paths.
@@ -46,6 +48,7 @@ def check() -> None:
     # These files come from the platform and its earlier Z01X build.
     for path, label in (
         (config.CC, "compiler"),
+        (config.NM, "symbol reader"),
         (config.SIMV, "fault simulator"),
         (config.DAIDIR, "simulator data"),
         (config.SFF, "fault list"),
@@ -135,6 +138,37 @@ def campaign_is_ready() -> bool:
     except (json.JSONDecodeError, OSError):
         return False
     return normalize_fingerprint(saved) == campaign_fingerprint()
+
+
+def evaluation_digest(
+    source: Path,
+    full: bool,
+    selected_ids: list[int] | None = None,
+) -> str:
+    """Key a result by its program and every input that changes its meaning."""
+    digest = hashlib.sha256()
+
+    # Changes to the program, harness, or evaluator must not reuse old scores.
+    for label, path in (
+        ("source", source),
+        ("harness", HERE / "harness.c"),
+        ("evaluator", Path(__file__)),
+        ("config", HERE / "config.py"),
+    ):
+        digest.update(label.encode())
+        digest.update(path.read_bytes())
+
+    # A sampled run also depends on the exact selected fault IDs.
+    if not full:
+        digest.update(b"faults")
+        ids = selected_ids if selected_ids is not None else fault_ids()
+        digest.update(json.dumps(ids).encode())
+
+    # This includes simv, its data directory, the SFF, and compiler options.
+    fingerprint = json.dumps(campaign_fingerprint(), sort_keys=True).encode()
+    digest.update(fingerprint)
+    digest.update(b"full" if full else b"sampled")
+    return digest.hexdigest()[:16]
 
 
 def build_campaign() -> Path:
@@ -230,8 +264,49 @@ def compile_program(source: Path, work: Path) -> Path:
     return binary
 
 
-def write_tcl(path: Path, binary: Path, ids: list[int] | None, report: Path) -> None:
+def raw_body_address(binary: Path) -> int:
+    """Read the unique 64-bit address of raw_body from one candidate."""
+    result = subprocess.run(
+        [str(config.NM), "--defined-only", str(binary)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        raise RuntimeError(f"nm failed for {binary}: {result.stderr.strip()}")
+
+    matches: list[int] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 3 and fields[-1] == "raw_body":
+            matches.append(int(fields[0], 16))
+
+    if len(matches) != 1:
+        raise ValueError(f"expected one raw_body symbol in {binary}, found {len(matches)}")
+    if not 0 <= matches[0] < 2**64:
+        raise ValueError(f"raw_body address does not fit in 64 bits: {matches[0]:x}")
+    return matches[0]
+
+
+def write_tcl(
+    path: Path,
+    binary: Path,
+    ids: list[int] | None,
+    report: Path,
+    raw_body_pc: int,
+) -> None:
     """Write the small Tcl script that runs one candidate."""
+    # Refuse a stale or hand-written address before simulation starts.
+    actual_pc = raw_body_address(binary)
+    if raw_body_pc != actual_pc:
+        raise ValueError(
+            f"raw_body address mismatch for {binary}: "
+            f"requested 0x{raw_body_pc:016x}, binary has 0x{actual_pc:016x}"
+        )
+
+    # Keep every fault result for later comparisons and monitor replays.
+    fault_report = report.with_name("faults.rpt")
+
     # Pass the same fixed seed and cycle limit to every program.
     args = " ".join(
         (
@@ -241,6 +316,7 @@ def write_tcl(path: Path, binary: Path, ids: list[int] | None, report: Path) -> 
             f"+max-cycles={config.MAX_CYCLES}",
             f"+ntb_random_seed={config.SEED}",
             f"+loadmem={binary}",
+            f"+raw_body_pc={raw_body_pc:016x}",
             "+verbose",
             "+permissive-off",
             str(binary),
@@ -266,10 +342,39 @@ set_config -update_interval 120
 create_testcases -name raw_candidate -exec {{{config.SIMV}}} -args {{{args}}}
 # Skip COATS and run the requested fault set.
 {fsim_command}
-# Save the coverage that becomes the fitness value.
+# Save every fault before the private database is removed.
+report -format standard -campaign {config.CAMPAIGN} -report {{{fault_report}}} -overwrite
+# Save the short coverage report that becomes the fitness value.
 report -campaign {config.CAMPAIGN} -summaryonly -report {{{report}}} -overwrite
 """
     )
+
+
+def require_injection_marker(work: Path) -> None:
+    """Require one injection marker from every simulator task log."""
+    task_logs = list((work / "fcm.dir").rglob("out.log"))
+    simulator_logs: list[Path] = []
+    evidence: list[str] = []
+
+    for log in task_logs:
+        text = log.read_text(errors="replace")
+        if "Chronologic VCS simulator" not in text:
+            continue
+        simulator_logs.append(log)
+        count = text.count(INJECTION_MARKER)
+        if count != 1:
+            raise RuntimeError(
+                f"expected one injection marker in {log}, found {count}; "
+                "preserving the run for review"
+            )
+        marker_line = next(line for line in text.splitlines() if INJECTION_MARKER in line)
+        evidence.append(f"{log}: {marker_line}")
+
+    if not simulator_logs:
+        raise RuntimeError(f"no simulator task logs found below {work / 'fcm.dir'}")
+
+    # Keep the proof after the large task directory is removed.
+    (work / "injection-markers.txt").write_text("\n".join(evidence) + "\n")
 
 
 def parse_coverage(report: Path, selected: int) -> float:
@@ -311,19 +416,29 @@ def parse_full_coverage(report: Path) -> float:
     return 100.0 * int(detected_match.group(1)) / int(total_match.group(1))
 
 
-def prepare(source: Path, full: bool = False) -> tuple[Path, Path]:
+def prepare(
+    source: Path,
+    full: bool = False,
+    digest: str | None = None,
+    selected_ids: list[int] | None = None,
+    result_group: str | None = None,
+) -> tuple[Path, Path]:
     """Compile a candidate and write its Tcl without running faults."""
-    # The hash gives the same program the same directory every time.
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
-    work = RUNS / "full" / digest if full else RUNS / digest
+    # The key changes when the program or experiment changes.
+    digest = digest or evaluation_digest(source, full, selected_ids)
+    if result_group:
+        work = RUNS / result_group / digest
+    else:
+        work = RUNS / "full" / digest if full else RUNS / digest
     # Make the directory once and reuse it on later checks.
     work.mkdir(parents=True, exist_ok=True)
 
     # Build the binary before we create the Tcl that refers to it.
     binary = compile_program(source, work)
+    raw_body_pc = raw_body_address(binary)
     tcl = work / "fsim.tcl"
-    ids = None if full else fault_ids()
-    write_tcl(tcl, binary, ids, work / "summary.rpt")
+    ids = None if full else (selected_ids if selected_ids is not None else fault_ids())
+    write_tcl(tcl, binary, ids, work / "summary.rpt", raw_body_pc)
     return work, tcl
 
 
@@ -335,24 +450,57 @@ def compile_smoke(source: Path) -> Path:
     return compile_program(source, work)
 
 
-def score(source: Path, full: bool = False) -> float:
+def score(
+    source: Path,
+    full: bool = False,
+    selected_ids: list[int] | None = None,
+    result_group: str | None = None,
+) -> float:
     """Run the selected faults and return the coverage percentage."""
-    ids = None if full else fault_ids()
+    ids = None if full else (selected_ids if selected_ids is not None else fault_ids())
 
-    # Use the program text as the cache key.
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
-    work = RUNS / "full" / digest if full else RUNS / digest
+    # Never reuse a score from another program, simulator, or fault set.
+    digest = evaluation_digest(source, full, ids)
+    if result_group:
+        work = RUNS / result_group / digest
+    else:
+        work = RUNS / "full" / digest if full else RUNS / digest
     report = work / "summary.rpt"
-    # A finished report means this exact program was scored before.
-    if report.exists():
+    fault_report = work / "faults.rpt"
+    marker_report = work / "injection-markers.txt"
+
+    # Never combine evidence from different attempts or restart an old run
+    # merely because the earlier version saved only its summary.
+    permanent_files = (report, fault_report, marker_report)
+    completed_files = sum(path.exists() for path in permanent_files)
+    if completed_files not in (0, len(permanent_files)):
+        raise RuntimeError(
+            f"incomplete cached result in {work}; preserve it for review, "
+            "then remove summary.rpt, faults.rpt, and injection-markers.txt "
+            "before an intentional rerun"
+        )
+
+    # Reuse a score only when both permanent reports were saved.
+    if completed_files == len(permanent_files):
         coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
         # A previous run may have stopped after writing the report but before
         # it removed its private database. Finish that cleanup on a cache hit.
         remove_run_data(work)
         return coverage
 
+    # A new attempt must not inherit either report from an interrupted run.
+    report.unlink(missing_ok=True)
+    fault_report.unlink(missing_ok=True)
+    marker_report.unlink(missing_ok=True)
+
     # Compile the new program and make its Tcl file.
-    work, tcl = prepare(source, full=full)
+    work, tcl = prepare(
+        source,
+        full=full,
+        digest=digest,
+        selected_ids=ids,
+        result_group=result_group,
+    )
 
     # Start from the same untouched database for every program.
     # This keeps scores independent without rerunning vc_fcc.
@@ -365,7 +513,13 @@ def score(source: Path, full: bool = False) -> float:
         work / "fcm.log",
     )
 
-    # Read the result before removing the large temporary directories.
+    # A valid report is not enough if the commit trigger never fired.
+    require_injection_marker(work)
+
+    # Keep the detailed results before removing the private database.
+    require(fault_report, "detailed fault report")
+
+    # Read the score before removing the large temporary directories.
     coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
     remove_run_data(work)
 
@@ -381,6 +535,7 @@ def main() -> int:
     parser.add_argument("--campaign", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--validate-faults", type=int, metavar="N")
     parser.add_argument("--compile", type=Path, metavar="SOURCE")
     parser.add_argument("--prepare", type=Path, metavar="SOURCE")
     parser.add_argument("sources", nargs="*", type=Path)
@@ -423,10 +578,26 @@ def main() -> int:
     if not args.sources:
         parser.error("give at least one assembly file")
 
+    validation_ids: list[int] | None = None
+    result_group: str | None = None
+    if args.validate_faults is not None:
+        if args.full:
+            parser.error("--validate-faults cannot be combined with --full")
+        available_ids = fault_ids()
+        if not 1 <= args.validate_faults <= len(available_ids):
+            parser.error(f"--validate-faults must be between 1 and {len(available_ids)}")
+        validation_ids = available_ids[:args.validate_faults]
+        result_group = "validate"
+
     # Score every program in the order MicroGP supplied them.
     values: list[float] = []
     for source in args.sources:
-        value = score(source, full=args.full)
+        value = score(
+            source,
+            full=args.full,
+            selected_ids=validation_ids,
+            result_group=result_group,
+        )
         values.append(value)
         print(f"{source}: {value:.2f}%")
 

@@ -1,8 +1,8 @@
 # RAW evolution
 
 This folder evolves short RISC-V programs that stress RAW handling in CVA6.
-It reuses the existing RTL simulator and its existing fault list. It does not
-run synthesis or rebuild the simulator.
+It reuses the RTL simulator and its fault list. It does not run synthesis or
+rebuild the simulator.
 
 ## Files
 
@@ -19,6 +19,16 @@ so one program cannot benefit from faults detected by an earlier program.
 Fitness is the percentage of the 500 selected faults that Z01X detects. Illegal
 results remain in the denominator, so a broken candidate cannot gain fitness.
 The evaluator also rejects a report unless all 500 faults were attempted.
+
+Faults are injected when the first instruction in `raw_body` retires. The
+evaluator reads that 64-bit address from each binary and passes it to the
+simulator. It checks both commit ports and rejects a run without the injection
+message.
+
+The strobe observes the ports of `CVA6CoreBlackbox`, not the ports of the two
+faulty blocks. A detection therefore means that a fault changed the value or
+timing of traffic at the AXI boundary. It does not mean that an internal probe
+changed.
 
 The genome contains the complete hand-written `seed.S` as its fixed base.
 Generation zero contains that exact program with no added patterns. Later
@@ -50,12 +60,14 @@ make select
 make check
 make prepare
 make campaign
+make validate
 ```
 
 `make prepare` compiles the seed and writes its Tcl file, but runs no faults.
 Review that Tcl file first. `make campaign` then runs the slow fault compiler
 once. It may take a long time, so run it inside tmux. After it succeeds,
-`make seed` copies the pristine database and runs only the selected 500 faults.
+`make validate` runs four faults and checks the injection message. Then
+`make seed` copies the pristine database and runs the selected 500 faults.
 Inspect that result before starting MicroGP. It is also the exact program that
 MicroGP receives in generation zero.
 
@@ -81,4 +93,5 @@ make evolve
 The search evaluates one program at a time. Each campaign may use up to 16
 workers. It stops after 20 generations, 100 unique programs, 24 hours, or five
 generations without a better score. Whichever limit occurs first stops the
-run. Results remain under `runs/`, indexed by the program hash.
+run. Results remain under `runs/`. Their keys include the program, simulator,
+fault set, harness, and evaluator settings, so stale scores are not reused.

@@ -36,6 +36,8 @@ DAIDIR = RUNDIR / "simv.daidir"
 # Use the compiler that belongs to this Testyard checkout.
 RISCV = TESTYARD / ".conda-env/riscv-tools"
 CC = RISCV / "bin/riscv64-unknown-elf-gcc"
+# Read the address of raw_body from each compiled candidate.
+NM = RISCV / "bin/riscv64-unknown-elf-nm"
 
 # The linker places a bare-metal program where the harness expects it.
 LINKER = TESTYARD / "tests/htif.ld"

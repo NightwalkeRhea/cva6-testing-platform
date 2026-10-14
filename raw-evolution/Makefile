@@ -2,7 +2,7 @@
 SHELL := /usr/bin/env bash
 
 # These names are commands, not files to create.
-.PHONY: help select check prepare campaign seed smoke evolve
+.PHONY: help select check prepare campaign validate seed smoke evolve
 
 # Show the short path through this flow.
 help:
@@ -11,6 +11,7 @@ help:
 	  'make check   Check tools and campaign files' \
 	  'make prepare Compile the seed and write Tcl without running it' \
 	  'make campaign Compile one pristine fault database' \
+	  'make validate Run four faults before a long campaign' \
 	  'make seed    Score the program placed in generation zero' \
 	  'make smoke   Generate and compile two programs without faults' \
 	  'make evolve  Evolve programs on the fixed 500 faults'
@@ -30,6 +31,10 @@ prepare:
 # Run vc_fcc once. Candidates copy this clean database.
 campaign:
 	python3 evaluate.py --campaign
+
+# Prove that injection works before a long run.
+validate:
+	python3 evaluate.py --validate-faults 4 seed.S
 
 # Measure the exact program that starts generation zero.
 seed:

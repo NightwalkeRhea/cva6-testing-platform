@@ -13,6 +13,7 @@ RISCV ?= $(TESTYARD)/.conda-env/riscv-tools
 TEST ?= $(TESTYARD)/tests/raw-hazard/raw-hazard.riscv
 TRACE_DIR ?= $(ROOT)/traces/monitored-raw
 SEED ?= 946094937
+RAW_BODY_PC = $(shell $(RISCV)/bin/riscv64-unknown-elf-nm --defined-only $(TEST) 2>/dev/null | awk '$$3 == "raw_body" {print $$1}')
 
 .PHONY: help check blackbox simv smoke fsim
 
@@ -23,7 +24,7 @@ help:
 	  'make blackbox  Rebuild the CVA6 Verilog blackbox' \
 	  'make simv      Rebuild the normal VCS simulator' \
 	  'make smoke     Run the RAW test and check its traces' \
-	  'make fsim      Run the Z01X fault campaign'
+	  'make fsim      Run faults for a binary that defines raw_body'
 
 # this one will fail early when the shell or checkout is incomplete
 check:
@@ -49,7 +50,12 @@ smoke:
 
 # Run the saved CVA6 campaign through Hammer and Z01X (otherwise hammer will loop and loop and loop...)
 fsim:
+	@test -n "$(RAW_BODY_PC)" || { \
+	  echo 'ERROR: TEST must define raw_body; use the raw-evolution flow'; \
+	  false; \
+	}
 	$(MAKE) -C $(VLSI_DIR) fsim-rtl HAMMER_D_DEPS="" HAMMER_DEPENDENCIES="" \
 	  benchmark=cva6 BINARY=$(TEST) LOADMEM=$(TEST) RISCV=$(RISCV) FAULT_MODEL=saf \
+	  EXTRA_SIM_FLAGS="+raw_body_pc=$(RAW_BODY_PC)" \
 	  FSIM_CONF_FILE=./fsim/example-fsim-cva6-saf.yml \
 	  FSIM_STROBE_FILE=$(VLSI_DIR)/fsim/strobe/strobe_cva6.sv
