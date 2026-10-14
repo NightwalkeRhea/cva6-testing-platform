@@ -7,11 +7,26 @@
     <!-- These operations read two registers. -->
     <item type="constant" name="alu_op">
       <value>add</value><value>sub</value><value>xor</value>
-      <value>or</value><value>and</value><value>slt</value>
+      <value>or</value><value>and</value><value>slt</value><value>sltu</value>
+      <value>sll</value><value>srl</value><value>sra</value>
     </item>
     <!-- These operations read one register and one immediate value. -->
     <item type="constant" name="imm_op">
       <value>addi</value><value>xori</value><value>ori</value><value>andi</value>
+      <value>slti</value><value>sltiu</value>
+    </item>
+    <!-- Shift operations need a smaller immediate range. -->
+    <item type="constant" name="shift_imm_op">
+      <value>slli</value><value>srli</value><value>srai</value>
+    </item>
+    <!-- These operations make the result wait longer in the pipeline. -->
+    <item type="constant" name="long_op">
+      <value>mul</value><value>mulh</value><value>mulhu</value><value>mulhsu</value>
+    </item>
+    <!-- Every load is safe because the harness reserves an eight-byte slot. -->
+    <item type="constant" name="load_op">
+      <value>ld</value><value>lw</value><value>lwu</value>
+      <value>lh</value><value>lhu</value><value>lb</value><value>lbu</value>
     </item>
   </typeDefinitions>
 
@@ -28,26 +43,27 @@
     <section id="raw" prologueEpilogueCompulsory="false">
       <!-- Open the function and save its input. -->
       <prologue id="sectionPrologue">
-        <expression>    .option nopic
+        <expression>    # Emit normal code without position-independent addressing.
+    .option nopic
     .text
     .align 2
+    # Let the C harness call this symbol
     .globl raw_body
     .type raw_body, @function
+
+# A small program with several dependency distances
 raw_body:
-    # Reserve one stack slot for the load-use pattern.
+    # Reserve one stack slot and save the input there
     addi sp, sp, -16
-    # Save the input before generated code changes registers.
     sd a0, 0(sp)
-    # Keep the running result in t6.
-    mv t6, a0
 </expression>
       </prologue>
       <!-- Return the running result to the C harness. -->
       <epilogue id="sectionEpilogue">
-        <expression>    mv a0, t6
-    # Release the stack slot.
+        <expression>    # Release the stack slot before returning to C
     addi sp, sp, 16
     ret
+    # Record the final size for the assembler and linker
     .size raw_body, .-raw_body
 </expression>
       </epilogue>
@@ -56,17 +72,52 @@ raw_body:
         <subSection id="body" maxOccurs="1" minOccurs="1" maxReferences="0">
           <prologue id="bodyPrologue" />
           <epilogue id="bodyEpilogue" />
-          <!-- Build a short program from 8 to 64 complete patterns. -->
+          <!-- Build a short program from 1 to 64 complete patterns. -->
           <!-- The average keeps the first trials cheap enough to inspect. -->
-          <macros minOccurs="8" maxOccurs="64" averageOccurs="24" sigma="12">
+          <macros minOccurs="1" maxOccurs="64" averageOccurs="24" sigma="12">
+            <!-- This pattern is exactly the original hand-written seed. -->
+            <macro id="reference_chain" weight="3">
+              <expression>    # An adjacent producer and consumer, so t1 reads t0 immediately
+    <param ref="first_make"/> t0, a0, <param ref="first_imm"/>
+    <param ref="first_use"/>  t1, t0, a0
+    # now one independent instruction in between
+    <param ref="shift"/> t2, t1, <param ref="amount"/>
+    <param ref="gap_make"/> t6, a0, <param ref="gap_imm"/>
+    <param ref="gap_use"/>  t3, t2, t6
+    # now dependency on both rs1 and rs2, so t5 has to read "recent" t4 and t3
+    <param ref="source_use1"/>  t4, t3, t1
+    <param ref="source_use2"/>  t5, t4, t3
+    # A load, followed by ALU instruction to consume the load result
+    <param ref="load"/>   t0, 0(sp)
+    <param ref="load_use"/> t1, t0, <param ref="load_imm"/>
+    # Return a value that depends on all main chains above
+    <param ref="final_use"/>  a0, t5, t1
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="first_make" />
+                <item type="definedType" ref="alu_op" name="first_use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="first_imm" />
+                <item type="definedType" ref="shift_imm_op" name="shift" />
+                <item type="integer" minimum="0" maximum="63" name="amount" />
+                <item type="definedType" ref="imm_op" name="gap_make" />
+                <item type="integer" minimum="-2048" maximum="2047" name="gap_imm" />
+                <item type="definedType" ref="alu_op" name="gap_use" />
+                <item type="definedType" ref="alu_op" name="source_use1" />
+                <item type="definedType" ref="alu_op" name="source_use2" />
+                <item type="definedType" ref="load_op" name="load" />
+                <item type="definedType" ref="imm_op" name="load_use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="load_imm" />
+                <item type="definedType" ref="alu_op" name="final_use" />
+              </parameters>
+            </macro>
             <!-- Produce a value, then consume it on the next instruction. -->
             <macro id="adjacent" weight="5">
               <expression>    # Make a new value in t0.
-    <param ref="make"/> t0, t6, <param ref="imm"/>
+    <param ref="make"/> t0, a0, <param ref="imm"/>
     # Read t0 without any gap.
-    <param ref="use"/> t1, t0, t6
+    <param ref="use"/> t1, t0, a0
     # Keep this block connected to the next block.
-    xor t6, t6, t1
+    xor a0, a0, t1
 </expression>
               <parameters>
                 <item type="definedType" ref="imm_op" name="make" />
@@ -74,16 +125,50 @@ raw_body:
                 <item type="integer" minimum="-2048" maximum="2047" name="imm" />
               </parameters>
             </macro>
+            <!-- Shift a value, then consume it immediately. -->
+            <macro id="shift_adjacent" weight="2">
+              <expression>    # Make a shifted value in t0.
+    <param ref="shift"/> t0, a0, <param ref="amount"/>
+    # Consume the shifted value immediately.
+    <param ref="use"/> t1, t0, a0
+    # Keep the result alive for later patterns.
+    xor a0, a0, t1
+</expression>
+              <parameters>
+                <item type="definedType" ref="shift_imm_op" name="shift" />
+                <item type="definedType" ref="alu_op" name="use" />
+                <item type="integer" minimum="0" maximum="63" name="amount" />
+              </parameters>
+            </macro>
             <!-- Put one unrelated instruction between producer and consumer. -->
             <macro id="distance_one" weight="3">
               <expression>    # Make a new value in t2.
-    <param ref="make"/> t2, t6, <param ref="imm"/>
+    <param ref="make"/> t2, a0, <param ref="imm"/>
     # Insert one independent instruction.
-    addi t4, t6, 1
+    addi t4, a0, 1
     # Read t2 after the one-instruction gap.
     <param ref="use"/> t3, t2, t4
     # Mix the result into the running value.
-    xor t6, t6, t3
+    xor a0, a0, t3
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use" />
+                <item type="integer" minimum="-2048" maximum="2047" name="imm" />
+              </parameters>
+            </macro>
+            <!-- Put two independent instructions before the consumer. -->
+            <macro id="distance_two" weight="2">
+              <expression>    # Make a new value in t2.
+    <param ref="make"/> t2, a0, <param ref="imm"/>
+    # Insert the first independent instruction.
+    addi t4, a0, 1
+    # Insert the second independent instruction.
+    xor t5, a0, t4
+    # Read t2 after a two-instruction gap.
+    <param ref="use"/> t3, t2, t5
+    # Mix the result into the running value.
+    xor a0, a0, t3
 </expression>
               <parameters>
                 <item type="definedType" ref="imm_op" name="make" />
@@ -94,13 +179,13 @@ raw_body:
             <!-- Make both source registers immediately before their consumer. -->
             <macro id="two_sources" weight="3">
               <expression>    # Make the first source.
-    addi t0, t6, <param ref="left"/>
+    addi t0, a0, <param ref="left"/>
     # Make the second source.
-    xori t1, t6, <param ref="right"/>
+    xori t1, a0, <param ref="right"/>
     # Read both recent sources together.
     <param ref="use"/> t2, t0, t1
     # Preserve an effect from this block.
-    xor t6, t6, t2
+    xor a0, a0, t2
 </expression>
               <parameters>
                 <item type="definedType" ref="alu_op" name="use" />
@@ -111,17 +196,84 @@ raw_body:
             <!-- Load a value, then use it in the next ALU operation. -->
             <macro id="load_use" weight="2">
               <expression>    # Put the running value in memory.
-    sd t6, 0(sp)
+    sd a0, 0(sp)
     # Load that value into t0.
-    ld t0, 0(sp)
+    <param ref="load"/> t0, 0(sp)
     # Consume the load result immediately.
-    <param ref="use"/> t1, t0, t6
+    <param ref="use"/> t1, t0, a0
     # Feed the result into later blocks.
-    xor t6, t6, t1
+    xor a0, a0, t1
 </expression>
               <parameters>
                 <item type="definedType" ref="alu_op" name="use" />
+                <item type="definedType" ref="load_op" name="load" />
               </parameters>
+            </macro>
+            <!-- Feed one result through three dependent operations. -->
+            <macro id="chain_three" weight="3">
+              <expression>    # Start a dependency chain in t0.
+    <param ref="make"/> t0, a0, <param ref="imm"/>
+    # Consume the first result in t1.
+    <param ref="use1"/> t1, t0, a0
+    # Consume the second result in t2.
+    <param ref="use2"/> t2, t1, t0
+    # Consume the third result in t3.
+    <param ref="use3"/> t3, t2, t1
+    # Preserve the final result.
+    xor a0, a0, t3
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use1" />
+                <item type="definedType" ref="alu_op" name="use2" />
+                <item type="definedType" ref="alu_op" name="use3" />
+                <item type="integer" minimum="-2048" maximum="2047" name="imm" />
+              </parameters>
+            </macro>
+            <!-- Make two consumers read the same producer. -->
+            <macro id="fanout" weight="2">
+              <expression>    # Make one value for two consumers.
+    <param ref="make"/> t0, a0, <param ref="imm"/>
+    # Let the first consumer read t0.
+    <param ref="use1"/> t1, t0, a0
+    # Let the second consumer read the same t0.
+    <param ref="use2"/> t2, t0, t1
+    # Mix both consumers into the running value.
+    xor a0, t1, t2
+</expression>
+              <parameters>
+                <item type="definedType" ref="imm_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use1" />
+                <item type="definedType" ref="alu_op" name="use2" />
+                <item type="integer" minimum="-2048" maximum="2047" name="imm" />
+              </parameters>
+            </macro>
+            <!-- Wait for a multiply result and consume it immediately. -->
+            <macro id="long_latency" weight="1">
+              <expression>    # Start a multiply operation.
+    <param ref="make"/> t0, a0, a0
+    # Consume the multiply result immediately.
+    <param ref="use"/> t1, t0, a0
+    # Keep the result alive for later patterns.
+    xor a0, a0, t1
+</expression>
+              <parameters>
+                <item type="definedType" ref="long_op" name="make" />
+                <item type="definedType" ref="alu_op" name="use" />
+              </parameters>
+            </macro>
+            <!-- Use a produced address for both a store and a load. -->
+            <macro id="address_use" weight="1">
+              <expression>    # Produce an address in t0.
+    addi t0, sp, 0
+    # Use the address for a store.
+    sd a0, 0(t0)
+    # Use the same address for a load.
+    ld t1, 0(t0)
+    # Consume the loaded value immediately.
+    xor a0, a0, t1
+</expression>
+              <parameters />
             </macro>
           </macros>
         </subSection>

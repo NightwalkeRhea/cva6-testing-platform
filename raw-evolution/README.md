@@ -7,7 +7,8 @@ run synthesis or rebuild the simulator.
 ## Files
 
 - `select_faults.py` chooses 500 faults from the completed report.
-- `seed.S` is the first program that we score.
+- `seed.S` is the first program that we score and starts generation zero.
+- `seeds.txt` tells MicroGP which starting programs to assimilate.
 - `genome.xml` gives MicroGP safe producer-consumer patterns.
 - `evaluate.py` compiles one program and measures coverage.
 - `config.py` holds paths, the fixed seed, and the fault quotas.
@@ -19,6 +20,18 @@ so one program cannot benefit from faults detected by an earlier program.
 Fitness is the percentage of the 500 selected faults that Z01X detects. Illegal
 results remain in the denominator, so a broken candidate cannot gain fitness.
 The evaluator also rejects a report unless all 500 faults were attempted.
+
+The genome contains the complete hand-written `seed.S` as one parameterized
+pattern. MicroGP assimilates that exact program into generation zero, then fills
+the rest of the population with random programs. It can mutate the operations
+and immediate values inside the original chain, insert other RAW patterns, or
+replace the complete chain.
+
+The genome covers adjacent dependencies, gaps of one or two instructions,
+two-source dependencies, load-use cases, chains, fan-out, shifts, multiply
+results, and dependencies on memory addresses. It varies safe integer and load
+operations while keeping control flow finite. Branches, traps, CSRs, atomics,
+and floating-point operations remain outside this first RAW experiment.
 
 ## First check on the server
 
@@ -44,7 +57,8 @@ make campaign
 Review that Tcl file first. `make campaign` then runs the slow fault compiler
 once. It may take a long time, so run it inside tmux. After it succeeds,
 `make seed` copies the pristine database and runs only the selected 500 faults.
-Inspect that result before starting MicroGP.
+Inspect that result before starting MicroGP. It is also the exact program that
+MicroGP receives in generation zero.
 
 ## Safe MicroGP check
 
@@ -56,7 +70,8 @@ make smoke
 
 This command creates a temporary directory under `runs/`. MicroGP generates
 three programs, and the evaluator only compiles them. It returns dummy scores
-and never copies the fault database or starts a fault simulation.
+and never copies the fault database or starts a fault simulation. It also fails
+unless MicroGP confirms that it assimilated `seed.S`.
 
 ## One small generation
 

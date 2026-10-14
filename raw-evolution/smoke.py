@@ -57,6 +57,8 @@ def main() -> int:
     # MicroGP reads these three files from its current directory.
     shutil.copy2(HERE / "genome.xml", work / "genome.xml")
     shutil.copy2(HERE / "ugp3.settings.xml", work / "ugp3.settings.xml")
+    shutil.copy2(HERE / "seed.S", work / "seed.S")
+    shutil.copy2(HERE / "seeds.txt", work / "seeds.txt")
     small_population(work / "population.settings.xml")
 
     # Save the complete output while also showing it to the user.
@@ -75,6 +77,11 @@ def main() -> int:
     if result.returncode:
         print(f"MicroGP failed with status {result.returncode}")
         return result.returncode
+
+    # Success alone is not enough: prove that MicroGP read the starting program.
+    if "Individual successfully added to the population!" not in result.stdout:
+        print("MicroGP did not assimilate seed.S")
+        return 1
 
     # At least one generated input proves that MicroGP read the genome.
     generated = sorted(work.glob("individual*"))

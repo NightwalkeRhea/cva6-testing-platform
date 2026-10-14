@@ -29,6 +29,10 @@ DETECTED = re.compile(r"^#\s+Detected\s+DG\s+(\d+)", re.MULTILINE)
 TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
 NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
 
+# VCS and Z01X install two launchers for the same fault compiler.
+# Compare their release instead of their different launcher paths.
+TOOL_RELEASE = re.compile(r"(?:VCS|Z01X)_([^/]+)")
+
 
 def require(path: Path, label: str) -> None:
     """Fail early when one required file is missing."""
@@ -71,6 +75,28 @@ def run(command: list[str], cwd: Path, log: Path) -> None:
         raise RuntimeError(f"command failed with {result.returncode}; see {log}")
 
 
+def fault_compiler_identity(path: str) -> dict[str, str]:
+    """Return the part of the fault compiler identity that affects its output."""
+    match = TOOL_RELEASE.search(path)
+    if not match:
+        # An unfamiliar installation remains path-sensitive for safety.
+        return {"release": "unknown", "launcher": str(Path(path).resolve())}
+    return {"release": match.group(1), "tool": "vc_fcc"}
+
+
+def normalize_fingerprint(value: dict[str, object]) -> dict[str, object]:
+    """Read both the old path-based marker and the new release-based marker."""
+    normalized = dict(value)
+    compiler = normalized.get("vc_fcc")
+
+    # Databases made by the first version stored the complete launcher path.
+    if isinstance(compiler, str):
+        normalized["vc_fcc"] = fault_compiler_identity(compiler)
+
+    normalized["format"] = 2
+    return normalized
+
+
 def campaign_fingerprint() -> dict[str, object]:
     """Describe the files that affect fault compilation."""
     inputs: dict[str, dict[str, int | str]] = {}
@@ -90,9 +116,9 @@ def campaign_fingerprint() -> dict[str, object]:
 
     # Also reject a database made by another tool or option set.
     return {
-        "format": 1,
+        "format": 2,
         "campaign": config.CAMPAIGN,
-        "vc_fcc": shutil.which("vc_fcc"),
+        "vc_fcc": fault_compiler_identity(shutil.which("vc_fcc") or "vc_fcc"),
         "options": list(FCC_OPTIONS),
         "inputs": inputs,
     }
@@ -107,7 +133,7 @@ def campaign_is_ready() -> bool:
         saved = json.loads(CAMPAIGN_INFO.read_text())
     except (json.JSONDecodeError, OSError):
         return False
-    return saved == campaign_fingerprint()
+    return normalize_fingerprint(saved) == campaign_fingerprint()
 
 
 def build_campaign() -> Path:

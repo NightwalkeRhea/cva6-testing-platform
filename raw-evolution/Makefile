@@ -11,7 +11,7 @@ help:
 	  'make check   Check tools and campaign files' \
 	  'make prepare Compile the seed and write Tcl without running it' \
 	  'make campaign Compile one pristine fault database' \
-	  'make seed    Compile and score the starting RAW program' \
+	  'make seed    Score the program placed in generation zero' \
 	  'make smoke   Generate and compile three programs without faults' \
 	  'make evolve  Run one small MicroGP generation'
 
@@ -31,7 +31,7 @@ prepare:
 campaign:
 	python3 evaluate.py --campaign
 
-# Measure the hand-written program before evolution starts.
+# Measure the exact program that starts generation zero.
 seed:
 	python3 evaluate.py seed.S
 
@@ -41,4 +41,6 @@ smoke:
 
 # Run the small trial that population.settings.xml describes.
 evolve:
+	@test -f seed.S || { echo 'missing seed.S'; false; }
+	@test -f seeds.txt || { echo 'missing seeds.txt'; false; }
 	ugp3 --settingsFile ugp3.settings.xml

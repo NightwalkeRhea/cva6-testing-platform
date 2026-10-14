@@ -11,3 +11,6 @@ fitness.output
 # MicroGP uses these files to resume and report a run.
 status.xml
 statistics.csv
+# MicroGP saves its best generated program in the working directory.
+BEST_raw
+individual*
