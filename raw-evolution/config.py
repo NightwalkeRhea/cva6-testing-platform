@@ -5,29 +5,26 @@ server layout or the experiment changes.
 """
 from pathlib import Path
 
-# Find the repository from this file. This avoids paths tied to one user.
+# Find the repository from this file
 ROOT = Path(__file__).resolve().parent.parent
 
-# Testyard contains the simulator, tests, and RISC-V tools.
+# Testyard path that has the simulator, tests, and RISC-V tools
 TESTYARD = ROOT / "testyard"
 
-# Hammer places every file for this CVA6 build below this directory.
+# Hammer puts every file for this CVA6 build below this directory
 BUILD = (
     TESTYARD
     / "vlsi/build-nangate45-commercial-cva6"
     / "chipyard.harness.TestHarness.CVA6Config-ChipTop"
 )
-
-# We reuse the simulator from the completed RTL campaign.
-# Nothing in raw-evolution rebuilds this directory.
+# We reuse the simulator from the completed RTL campaign
 RUNDIR = BUILD / "fsim-rtl-rundir"
 
 # The completed campaign supplies both the fault list and the old results.
-# SFF describes the faults that Z01X can inject.
+# sff file will setup and define the "fault universe" so that Z01X can inject
 SFF = RUNDIR / "saf_chiptop0.sff"
 
-# REPORT records the old result for every fault.
-# The selector reads it when it creates faults.csv.
+#record the old result for every fault, and the selector will read this report when it creates fault.csv
 REPORT = RUNDIR / "saf/raw-hazard/fsim_out.rpt"
 
 # SIMV runs the candidate program with injected faults.

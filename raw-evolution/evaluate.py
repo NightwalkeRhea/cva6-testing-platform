@@ -24,8 +24,10 @@ CAMPAIGN_BASE = HERE / "campaign-base"
 CAMPAIGN_INFO = CAMPAIGN_BASE / "campaign.json"
 # These options must stay identical for every candidate.
 FCC_OPTIONS = ("-uncontrollability", "-prune", "on", "-collapse", "off")
-# Capture the percentage from the Z01X summary.
-FITNESS = re.compile(r"Fault Coverage\s+([0-9]+(?:\.[0-9]+)?)%")
+# Read counts from the Z01X summary.
+DETECTED = re.compile(r"^#\s+Detected\s+DG\s+(\d+)", re.MULTILINE)
+TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
+NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
 
 
 def require(path: Path, label: str) -> None:
@@ -227,12 +229,28 @@ report -campaign {config.CAMPAIGN} -summaryonly -report {{{report}}} -overwrite
     )
 
 
-def parse_coverage(report: Path) -> float:
-    """Read the fault coverage from a Z01X summary."""
-    match = FITNESS.search(report.read_text(errors="replace"))
-    if not match:
-        raise ValueError(f"fault coverage not found in {report}")
-    return float(match.group(1))
+def parse_coverage(report: Path, selected: int) -> float:
+    """Return detected faults as a percentage of the selected set."""
+    text = report.read_text(errors="replace")
+    detected_match = DETECTED.search(text)
+    testable_match = TESTABLE.search(text)
+    not_attempted_match = NOT_ATTEMPTED.search(text)
+
+    # All three counts are needed to prove that every selected fault ran.
+    if not detected_match or not testable_match or not not_attempted_match:
+        raise ValueError(f"required fault counts not found in {report}")
+
+    detected = int(detected_match.group(1))
+    attempted = int(testable_match.group(1)) - int(not_attempted_match.group(1))
+
+    # Reject incomplete runs instead of giving them misleading scores.
+    if attempted != selected:
+        raise ValueError(
+            f"report attempted {attempted} faults, but {selected} were selected: {report}"
+        )
+
+    # Illegal results stay in the denominator and therefore reduce fitness.
+    return 100.0 * detected / selected
 
 
 def prepare(source: Path) -> tuple[Path, Path]:
@@ -252,13 +270,15 @@ def prepare(source: Path) -> tuple[Path, Path]:
 
 def score(source: Path) -> float:
     """Run the selected faults and return the coverage percentage."""
+    ids = fault_ids()
+
     # Use the program text as the cache key.
     digest = hashlib.sha256(source.read_bytes()).hexdigest()[:16]
     work = RUNS / digest
     report = work / "summary.rpt"
     # A finished report means this exact program was scored before.
     if report.exists():
-        return parse_coverage(report)
+        return parse_coverage(report, len(ids))
 
     # Compile the new program and make its Tcl file.
     work, tcl = prepare(source)
@@ -275,7 +295,7 @@ def score(source: Path) -> float:
     )
 
     # Read the result before removing the large temporary directories.
-    coverage = parse_coverage(report)
+    coverage = parse_coverage(report, len(ids))
     remove_run_data(work)
 
     # MicroGP maximizes the returned coverage value.

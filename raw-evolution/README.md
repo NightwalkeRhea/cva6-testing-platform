@@ -16,6 +16,10 @@ The flow runs `vc_fcc` once and saves a pristine database. Before it scores a
 program, it gives that program a private copy. The copy keeps results separate,
 so one program cannot benefit from faults detected by an earlier program.
 
+Fitness is the percentage of the 500 selected faults that Z01X detects. Illegal
+results remain in the denominator, so a broken candidate cannot gain fitness.
+The evaluator also rejects a report unless all 500 faults were attempted.
+
 ## First check on the server
 
 Start from the shell that can run the EDA tools:
