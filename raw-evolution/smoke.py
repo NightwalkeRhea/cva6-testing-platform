@@ -26,14 +26,13 @@ def small_population(destination: Path) -> None:
 
     # Keep enough individuals for the tournament selector.
     text = replace_once(text, '<mu value="8" />', '<mu value="2" />')
-    text = replace_once(text, '<nu value="8" />', '<nu value="2" />')
-    text = replace_once(text, '<lambda value="4" />', '<lambda value="1" />')
+    text = replace_once(text, '<lambda value="8" />', '<lambda value="1" />')
 
     # Three compilations are enough to exercise generation and mutation.
     text = replace_once(
         text,
-        '<maximumEvaluations value="12" />',
-        '<maximumEvaluations value="3" />',
+        '<maximumEvaluations value="9" />',
+        '<maximumEvaluations value="2" />',
     )
 
     # Call the real compiler path, but enable its safe smoke mode.
@@ -54,11 +53,9 @@ def main() -> int:
     RUNS.mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="microgp-smoke-", dir=RUNS))
 
-    # MicroGP reads these three files from its current directory.
+    # MicroGP reads these files from its current directory.
     shutil.copy2(HERE / "genome.xml", work / "genome.xml")
     shutil.copy2(HERE / "ugp3.settings.xml", work / "ugp3.settings.xml")
-    shutil.copy2(HERE / "seed.S", work / "seed.S")
-    shutil.copy2(HERE / "seeds.txt", work / "seeds.txt")
     small_population(work / "population.settings.xml")
 
     # Save the complete output while also showing it to the user.
@@ -78,18 +75,20 @@ def main() -> int:
         print(f"MicroGP failed with status {result.returncode}")
         return result.returncode
 
-    # Success alone is not enough: prove that MicroGP read the starting program.
-    if "Individual successfully added to the population!" not in result.stdout:
-        print("MicroGP did not assimilate seed.S")
-        return 1
-
     # At least one generated input proves that MicroGP read the genome.
     generated = sorted(work.glob("individual*"))
     if not generated:
         print("MicroGP returned success but generated no programs")
         return 1
 
+    # The first program must be the exact hand-written seed.
+    seed = (HERE / "seed.S").read_text()
+    if not any(path.read_text() == seed for path in generated):
+        print("generation zero did not contain the exact seed.S")
+        return 1
+
     print(f"generated and compiled {len(generated)} programs")
+    print("generation zero contains the exact seed.S")
     for path in generated:
         print(f"  {path.name}")
     return 0

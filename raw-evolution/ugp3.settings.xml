@@ -5,8 +5,7 @@
     <!-- Use the same random choices on every repeated run. -->
     <option name="randomSeed" value="946094937" />
     <!-- Load the one population used for RAW programs. -->
-    <!-- Put our designed starting program in generation zero. -->
-    <option name="populations"><population name="raw" value="population.settings.xml" seedingFile="seeds.txt" /></option>
+    <option name="populations"><population name="raw" value="population.settings.xml" /></option>
     <!-- Save progress from each generation in a simple table. -->
     <option name="statisticsPathName" value="statistics.csv" />
   </context>

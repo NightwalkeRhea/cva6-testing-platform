@@ -4,18 +4,18 @@
 <parameters type="enhanced">
   <!-- Keep eight parents from one generation to the next. -->
   <mu value="8" />
-  <!-- Create eight children before selection. -->
-  <nu value="8" />
-  <!-- Allow four extra candidates during the generation. -->
-  <lambda value="4" />
+  <!-- Start with one exact copy of seed.S. -->
+  <nu value="1" />
+  <!-- Create eight children from that seed. -->
+  <lambda value="8" />
   <!-- Stop after one generation while we validate the flow. -->
   <maximumGenerations value="1" />
-  <!-- Never score more than twelve programs in this first test. -->
-  <maximumEvaluations value="12" />
+  <!-- Score the seed and no more than eight children. -->
+  <maximumEvaluations value="9" />
   <!-- Stop a stuck run after eight hours. -->
   <maximumTime hours="8" />
   <!-- These two values control how strongly variation changes programs. -->
-  <sigma value="0.9" />
+  <sigma value="0.25" />
   <inertia value="0.9" />
   <!-- Remove individuals that survive too long without improvement. -->
   <maximumAge value="3" />
@@ -26,7 +26,7 @@
   <!-- Keep a score valid until the program itself changes. -->
   <invalidateFitnessAfterGeneration value="0" />
   <!-- Compare small groups and keep the program with better coverage. -->
-  <selection type="tournamentWithFitnessHole" tau="2" tauMin="1" tauMax="1" fitnessHole="0" />
+  <selection type="tournamentWithFitnessHole" tau="1" tauMin="1" tauMax="1" fitnessHole="0" />
   <!-- Each program returns one value: fault coverage. -->
   <fitnessParameters value="1" />
   <!-- genome.xml defines the allowed RAW patterns. -->
@@ -47,16 +47,10 @@
 
   <!-- Enable only the basic ways to change a program. -->
   <operators default="none">
-    <!-- Join pieces from two programs. -->
-    <operator ref="onePointImpreciseCrossover" />
-    <!-- Change an instruction choice or an immediate value. -->
+    <!-- Change values inside an added pattern. -->
     <operator ref="singleParameterAlterationMutation" />
-    <!-- Add, remove, replace, or move a complete RAW pattern. -->
+    <!-- Add a new pattern or replace the invisible starting node. -->
     <operator ref="insertionMutation" />
-    <operator ref="removalMutation" />
     <operator ref="replacementMutation" />
-    <operator ref="swapMutation" />
-    <!-- Create the first random programs. -->
-    <operator ref="randomizer" />
   </operators>
 </parameters>

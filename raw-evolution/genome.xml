@@ -40,7 +40,7 @@
 
   <!-- This flow needs only one assembly section. -->
   <sections>
-    <section id="raw" prologueEpilogueCompulsory="false">
+    <section id="raw" prologueEpilogueCompulsory="true">
       <!-- Open the function and save its input. -->
       <prologue id="sectionPrologue">
         <expression>    # Emit normal code without position-independent addressing.
@@ -56,6 +56,21 @@ raw_body:
     # Reserve one stack slot and save the input there
     addi sp, sp, -16
     sd a0, 0(sp)
+    # An adjacent producer and consumer, so t1 reads t0 immediately
+    addi t0, a0, 17
+    xor  t1, t0, a0
+    # now one independent instruction in between
+    slli t2, t1, 3
+    addi t6, a0, 5
+    add  t3, t2, t6
+    # now dependency on both rs1 and rs2, so t5 has to read "recent" t4 and t3
+    sub  t4, t3, t1
+    xor  t5, t4, t3
+    # A load, followed by ALU instruction to consume the load result
+    ld   t0, 0(sp)
+    addi t1, t0, 31
+    # Return a value that depends on all main chains above
+    xor  a0, t5, t1
 </expression>
       </prologue>
       <!-- Return the running result to the C harness. -->
@@ -72,44 +87,10 @@ raw_body:
         <subSection id="body" maxOccurs="1" minOccurs="1" maxReferences="0">
           <prologue id="bodyPrologue" />
           <epilogue id="bodyEpilogue" />
-          <!-- Build a short program from 1 to 64 complete patterns. -->
-          <!-- The average keeps the first trials cheap enough to inspect. -->
-          <macros minOccurs="1" maxOccurs="64" averageOccurs="24" sigma="12">
-            <!-- This pattern is exactly the original hand-written seed. -->
-            <macro id="reference_chain" weight="3">
-              <expression>    # An adjacent producer and consumer, so t1 reads t0 immediately
-    <param ref="first_make"/> t0, a0, <param ref="first_imm"/>
-    <param ref="first_use"/>  t1, t0, a0
-    # now one independent instruction in between
-    <param ref="shift"/> t2, t1, <param ref="amount"/>
-    <param ref="gap_make"/> t6, a0, <param ref="gap_imm"/>
-    <param ref="gap_use"/>  t3, t2, t6
-    # now dependency on both rs1 and rs2, so t5 has to read "recent" t4 and t3
-    <param ref="source_use1"/>  t4, t3, t1
-    <param ref="source_use2"/>  t5, t4, t3
-    # A load, followed by ALU instruction to consume the load result
-    <param ref="load"/>   t0, 0(sp)
-    <param ref="load_use"/> t1, t0, <param ref="load_imm"/>
-    # Return a value that depends on all main chains above
-    <param ref="final_use"/>  a0, t5, t1
-</expression>
-              <parameters>
-                <item type="definedType" ref="imm_op" name="first_make" />
-                <item type="definedType" ref="alu_op" name="first_use" />
-                <item type="integer" minimum="-2048" maximum="2047" name="first_imm" />
-                <item type="definedType" ref="shift_imm_op" name="shift" />
-                <item type="integer" minimum="0" maximum="63" name="amount" />
-                <item type="definedType" ref="imm_op" name="gap_make" />
-                <item type="integer" minimum="-2048" maximum="2047" name="gap_imm" />
-                <item type="definedType" ref="alu_op" name="gap_use" />
-                <item type="definedType" ref="alu_op" name="source_use1" />
-                <item type="definedType" ref="alu_op" name="source_use2" />
-                <item type="definedType" ref="load_op" name="load" />
-                <item type="definedType" ref="imm_op" name="load_use" />
-                <item type="integer" minimum="-2048" maximum="2047" name="load_imm" />
-                <item type="definedType" ref="alu_op" name="final_use" />
-              </parameters>
-            </macro>
+          <!-- Start with one invisible node, so the output still equals seed.S. -->
+          <!-- Mutations may add up to 64 complete RAW patterns after it. -->
+          <macros minOccurs="1" maxOccurs="64" averageOccurs="1" sigma="0">
+            <macro id="zzz_empty" weight="3"><expression /></macro>
             <!-- Produce a value, then consume it on the next instruction. -->
             <macro id="adjacent" weight="5">
               <expression>    # Make a new value in t0.

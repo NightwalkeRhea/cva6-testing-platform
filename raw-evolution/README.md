@@ -8,7 +8,6 @@ run synthesis or rebuild the simulator.
 
 - `select_faults.py` chooses 500 faults from the completed report.
 - `seed.S` is the first program that we score and starts generation zero.
-- `seeds.txt` tells MicroGP which starting programs to assimilate.
 - `genome.xml` gives MicroGP safe producer-consumer patterns.
 - `evaluate.py` compiles one program and measures coverage.
 - `config.py` holds paths, the fixed seed, and the fault quotas.
@@ -21,11 +20,11 @@ Fitness is the percentage of the 500 selected faults that Z01X detects. Illegal
 results remain in the denominator, so a broken candidate cannot gain fitness.
 The evaluator also rejects a report unless all 500 faults were attempted.
 
-The genome contains the complete hand-written `seed.S` as one parameterized
-pattern. MicroGP assimilates that exact program into generation zero, then fills
-the rest of the population with random programs. It can mutate the operations
-and immediate values inside the original chain, insert other RAW patterns, or
-replace the complete chain.
+The genome contains the complete hand-written `seed.S` as its fixed base.
+Generation zero contains that exact program with no added patterns. Later
+generations add or replace complete RAW patterns after the base, then change
+their operations and values. This avoids MicroGP's old and fragile parser for
+source seeding.
 
 The genome covers adjacent dependencies, gaps of one or two instructions,
 two-source dependencies, load-use cases, chains, fan-out, shifts, multiply
@@ -69,9 +68,9 @@ make smoke
 ```
 
 This command creates a temporary directory under `runs/`. MicroGP generates
-three programs, and the evaluator only compiles them. It returns dummy scores
+two programs, and the evaluator only compiles them. It returns dummy scores
 and never copies the fault database or starts a fault simulation. It also fails
-unless MicroGP confirms that it assimilated `seed.S`.
+unless generation zero contains the exact text from `seed.S`.
 
 ## One small generation
 

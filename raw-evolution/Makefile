@@ -12,7 +12,7 @@ help:
 	  'make prepare Compile the seed and write Tcl without running it' \
 	  'make campaign Compile one pristine fault database' \
 	  'make seed    Score the program placed in generation zero' \
-	  'make smoke   Generate and compile three programs without faults' \
+	  'make smoke   Generate and compile two programs without faults' \
 	  'make evolve  Run one small MicroGP generation'
 
 # Choose a stable set of 500 faults from the saved report.
@@ -42,5 +42,4 @@ smoke:
 # Run the small trial that population.settings.xml describes.
 evolve:
 	@test -f seed.S || { echo 'missing seed.S'; false; }
-	@test -f seeds.txt || { echo 'missing seeds.txt'; false; }
 	ugp3 --settingsFile ugp3.settings.xml
