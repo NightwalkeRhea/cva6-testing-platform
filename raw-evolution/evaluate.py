@@ -185,7 +185,11 @@ def compile_program(source: Path, work: Path) -> Path:
         str(config.CC),
         "-O2", "-static", "-march=rv64imafd", "-mabi=lp64d", "-mcmodel=medany",
         "-specs=htif_nano.specs", "-T", str(config.LINKER),
-        str(HERE / "harness.c"), str(source.resolve()), "-o", str(binary),
+        str(HERE / "harness.c"),
+        # MicroGP produces names such as "individual0" without a .S suffix.
+        # Tell GCC that this input is assembly instead of relying on its name.
+        "-x", "assembler-with-cpp", str(source.resolve()), "-x", "none",
+        "-o", str(binary),
     ]
     run(command, work, work / "compile.log")
     return binary
