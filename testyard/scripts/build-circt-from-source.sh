@@ -4,7 +4,7 @@
 set -e
 set -o pipefail
 
-RDIR=$(git rev-parse --show-toplevel)
+RDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # get helpful utilities
 source $RDIR/scripts/utils.sh
@@ -105,4 +105,3 @@ echo "Installing CIRCT to $PREFIX"
     cd $RDIR/tools/circt/build
     ninja install
 )
-

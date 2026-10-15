@@ -5,12 +5,13 @@
 set -e
 set -o pipefail
 
-CYDIR=$(git rev-parse --show-toplevel)
+CYDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+GIT_PREFIX=$(git -C "$CYDIR" rev-parse --show-prefix)
 
 cd "$CYDIR"
 
 # Reenable the FireSim submodule
-git config --unset submodule.sims/firesim.update || true
+git config --unset "submodule.${GIT_PREFIX}sims/firesim.update" || true
 pushd sims/firesim
 ./build-setup.sh "$@" --library
 popd

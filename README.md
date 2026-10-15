@@ -3,6 +3,11 @@ A unified validation platform for CVA6. It brings together CAD Chipyard, CAD Ham
 
 ## Getting Started
 First you need to read this README to know how the repository is managed, and then, to dive in, you can start with [testyard/README.md](testyard/README.md) to know how to configure and run Chipyard.
+
+If you want to run the RAW experiment, follow the commands in
+[raw-evolution/README.md](raw-evolution/README.md). It explains the environment,
+campaign, validation, and MicroGP flow in order.
+
 ### How the repositories are managed
 
 Chipyard, Hammer, and MicroGP3 are imported using Git subtree.
@@ -19,6 +24,34 @@ Simple!
 git clone git@github.com:NightwalkeRhea/cva6-testing-platform.git
 cd cva6-testing-platform
 ```
+
+### Set up Testyard
+
+Run this once after a fresh clone. It creates the Conda environment and
+initializes the common Chipyard modules, the CVA6 wrapper, and its RTL.
+
+Do not activate the EDA tools yet. Their libraries can interfere with Conda.
+
+```bash
+cd "$HOME/cva6-testing-platform"
+activate_proxies
+
+./testyard/build-setup.sh --use-lean-conda --cva6-only
+source testyard/env.sh
+
+python -m pip install -e ./hammer
+python -c 'import hammer.fsim.vc_zoix as p; print(p.__file__)'
+
+deactivate_proxies
+```
+
+`activate_proxies` and `deactivate_proxies` are helpers on the CAD server. Skip
+those two lines on a machine that does not need a proxy.
+
+The final Python command must print a path inside this repository's `hammer/`
+directory. The setup can take a while, but it only needs to run once for each
+clone.
+
 ### Make changes
 
 Just like you're managing a normal repo.

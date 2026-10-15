@@ -4,7 +4,7 @@
 set -e
 set -o pipefail
 
-RDIR=$(git rev-parse --show-toplevel)
+RDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # get helpful utilities
 source $RDIR/scripts/utils.sh
@@ -21,10 +21,10 @@ usage() {
     echo "Installation Types"
     echo "   riscv-tools: if set, builds the riscv toolchain (this is also the default)"
     echo ""
-    echo "Options"
-    echo "   --prefix -p PREFIX    : Install destination."
-    echo "   --clean-after-install : Run make clean in calls to module_make and module_build"
-    echo "   --help -h             : Display this message"
+echo "Options"
+echo "   --prefix -p PREFIX    : Install destination."
+echo "   --clean-after-install : Run make clean in calls to module_make and module_build"
+echo "   --help -h             : Display this message"
     exit "$1"
 }
 
@@ -103,7 +103,7 @@ CC= CXX= SRCDIR="$(pwd)/toolchains" module_all libgloss --prefix="${RISCV}/riscv
 cd "$(pwd)/toolchains/libgloss" && mkdir -p build-32 && cd build-32 && ../configure --prefix="${RISCV}/riscv64-unknown-elf" --host=riscv64-unknown-elf --enable-multilib='rv32imc_zicsr/ilp32' && make CFLAGS_FOR_TARGET="-march=rv32imc_zicsr -mabi=ilp32"
 
 cd $RDIR
-if [ $TOOLCHAIN == "riscv-tools" ]; then
+if [ "$TOOLCHAIN" = "riscv-tools" ] && [ -e "$RDIR/generators/gemmini/.git" ]; then
     echo '==> Installing gemmini spike extensions'
     git submodule update --init generators/gemmini
     cd generators/gemmini

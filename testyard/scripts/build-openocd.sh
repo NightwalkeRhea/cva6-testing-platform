@@ -4,7 +4,8 @@
 set -e
 set -o pipefail
 
-RDIR=$(git rev-parse --show-toplevel)
+RDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+GIT_PREFIX=$(git -C "$RDIR" rev-parse --show-prefix)
 
 if [ -z "${RISCV}" ] ; then
     ! [ -r "${RDIR}/env.sh" ] || . "${RDIR}/env.sh"
@@ -17,7 +18,7 @@ fi
 SRCDIR="${RDIR}/toolchains/riscv-tools"
 . "${RDIR}/scripts/build-util.sh"
 
-git config --unset submodule.toolchains/riscv-tools/riscv-openocd.update || :
+git -C "$RDIR" config --unset "submodule.${GIT_PREFIX}toolchains/riscv-tools/riscv-openocd.update" || :
 module_prepare riscv-openocd
 module_run riscv-openocd ./bootstrap
 module_build riscv-openocd --prefix="${RISCV}" \

@@ -4,7 +4,14 @@
 set -e
 set -o pipefail
 
-CYDIR=$(git rev-parse --show-toplevel)
+# Find Testyard even when it lives inside the platform repository.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [[ -d "$SCRIPT_DIR/scripts" ]]; then
+    CYDIR=$SCRIPT_DIR
+else
+    CYDIR=$(cd "$SCRIPT_DIR/.." && pwd)
+fi
+cd "$CYDIR"
 
 # get helpful utilities
 source $CYDIR/scripts/utils.sh
@@ -38,6 +45,7 @@ usage() {
     echo "  --verbose -v            : Verbose printout"
     echo "  --use-unpinned-deps -ud : Use unpinned conda environment"
     echo "  --use-lean-conda        : Install a leaner version of the repository (smaller conda env, no FireSim, no FireMarshal)"
+    echo "  --cva6-only             : Initialize the common modules and CVA6, not every optional core"
     echo "  --build-circt           : Builds CIRCT from source, instead of downloading the precompiled binary"
     echo "  --conda-env-name NAME   : Optionally use a global conda env name instead of storing env in Chipyard directory"
     echo "  --github-token TOKEN    : Optionally use a Github token to download CIRCT"
@@ -61,6 +69,7 @@ VERBOSE=false
 VERBOSE_FLAG=""
 USE_UNPINNED_DEPS=false
 USE_LEAN_CONDA=false
+CVA6_ONLY=false
 SKIP_LIST=()
 BUILD_CIRCT=false
 GLOBAL_ENV_NAME=""
@@ -80,6 +89,8 @@ do
         --use-lean-conda)
             USE_LEAN_CONDA=true
             SKIP_LIST+=(4 6 7 8 9) ;;
+        --cva6-only)
+            CVA6_ONLY=true ;;
         --build-circt)
             BUILD_CIRCT=true ;;
         --conda-env-name)
@@ -242,7 +253,11 @@ fi
 # initialize all submodules (without the toolchain submodules)
 if run_step "2"; then
     begin_step "2" "Initializing Chipyard submodules"
-    $CYDIR/scripts/init-submodules-no-riscv-tools.sh --full
+    if [ "$CVA6_ONLY" = true ]; then
+        $CYDIR/scripts/init-submodules-no-riscv-tools.sh --cva6
+    else
+        $CYDIR/scripts/init-submodules-no-riscv-tools.sh --full
+    fi
     exit_if_last_command_failed
 fi
 

@@ -3,7 +3,10 @@
 # Strict mode: exit on error, unset vars, and fail on pipe errors
 set -euo pipefail
 
-RDIR=$(git rev-parse --show-toplevel)
+RDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# Git uses this prefix when Testyard is inside another repository.
+GIT_PREFIX=$(git -C "$RDIR" rev-parse --show-prefix)
 
 # get helpful utilities
 source $RDIR/scripts/utils.sh
@@ -209,14 +212,14 @@ cd "$RDIR"
         done
     }
 
-    _skip() { git config --local "submodule.${1}.update" none ; }
-    _unskip() { git config --local --unset-all "submodule.${1}.update" || : ; }
+    _skip() { git config --local "submodule.${GIT_PREFIX}${1}.update" none ; }
+    _unskip() { git config --local --unset-all "submodule.${GIT_PREFIX}${1}.update" || : ; }
 
     trap 'git_submodule_exclude _unskip' EXIT INT TERM
     (
         set -x
         git_submodule_exclude _skip
-        git submodule update --init --recursive || exit 1
+        git submodule update --init --recursive -- . || exit 1
     )
 )
 
@@ -302,7 +305,7 @@ cd "$RDIR"
     # Minimal non-recursive clone to initialize sbt dependencies
     submodule_name="sims/firesim"
     git submodule update --init sims/firesim || exit 1
-    git config --local submodule.sims/firesim.update none
+    git config --local "submodule.${GIT_PREFIX}sims/firesim.update" none
 
     # Non-recursive clone
     submodule_name="tools/rocket-dsp-utils"

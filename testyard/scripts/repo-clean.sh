@@ -2,8 +2,9 @@
 
 set -e
 
-# this should be run from chipyard repo top
-RDIR=$(git rev-parse --show-toplevel)
+# Find Testyard from this script, not from the outer Git repository.
+RDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+GIT_PREFIX=$(git -C "$RDIR" rev-parse --show-prefix)
 
 rm -rf $RDIR/toolchains/libgloss/build.log
 rm -rf $RDIR/toolchains/riscv-tools/riscv-isa-sim/build.log
@@ -22,14 +23,18 @@ rm -rf $RDIR/toolchains/riscv-tools/riscv-tests/build.log
     git config --local status.showUntrackedFiles no
     popd
 )
-(
-    if [ -d $RDIR/generators/cva6/src/main/resources/cva6/vsrc ]
-    then
-        pushd $RDIR/generators/cva6/src/main/resources/cva6/vsrc
-        if [ -d cva6 ]
+# A standalone Testyard checkout keeps its original cleanup behavior. Inside
+# the platform, CVA6 is part of the main flow and must remain initialized.
+if [[ -z "$GIT_PREFIX" ]]; then
+    (
+        if [ -d $RDIR/generators/cva6/src/main/resources/cva6/vsrc ]
         then
-	    git submodule deinit -f cva6
+            pushd $RDIR/generators/cva6/src/main/resources/cva6/vsrc
+            if [ -d cva6 ]
+            then
+	        git submodule deinit -f cva6
+            fi
+            popd
         fi
-        popd
-    fi
-)
+    )
+fi
