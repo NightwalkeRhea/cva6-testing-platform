@@ -29,6 +29,8 @@ DETECTED = re.compile(r"^#\s+Detected\s+DG\s+(\d+)", re.MULTILINE)
 TOTAL = re.compile(r"^# Number of Faults:\s+(\d+)", re.MULTILINE)
 TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
 NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
+# Read the status of each port fault from the current SFF.
+SFF_FAULT = re.compile(r'^\s*(?P<status>[A-Z0-9]+)\s+[01]\s+\{PORT\s+"')
 # This line proves that the strobe reached raw_body and injected faults.
 INJECTION_MARKER = "CVA6 RAW: injecting faults"
 
@@ -67,6 +69,25 @@ def fault_ids() -> list[int]:
     """Read the 500 fault IDs chosen by select_faults.py."""
     with (HERE / "faults.csv").open(newline="") as stream:
         return [int(row["fid"]) for row in csv.DictReader(stream)]
+
+
+def validation_fault_ids(count: int) -> list[int]:
+    """Choose faults that are testable in the current campaign."""
+    chosen: list[int] = []
+    fid = 0
+
+    for line in config.SFF.read_text(errors="replace").splitlines():
+        match = SFF_FAULT.match(line)
+        if not match:
+            continue
+
+        fid += 1
+        if match.group("status") == "NA":
+            chosen.append(fid)
+            if len(chosen) == count:
+                return chosen
+
+    raise ValueError(f"requested {count} validation faults, but only found {len(chosen)}")
 
 
 def run(command: list[str], cwd: Path, log: Path) -> None:
@@ -583,10 +604,9 @@ def main() -> int:
     if args.validate_faults is not None:
         if args.full:
             parser.error("--validate-faults cannot be combined with --full")
-        available_ids = fault_ids()
-        if not 1 <= args.validate_faults <= len(available_ids):
-            parser.error(f"--validate-faults must be between 1 and {len(available_ids)}")
-        validation_ids = available_ids[:args.validate_faults]
+        if args.validate_faults < 1:
+            parser.error("--validate-faults must be at least 1")
+        validation_ids = validation_fault_ids(args.validate_faults)
         result_group = "validate"
 
     # Score every program in the order MicroGP supplied them.

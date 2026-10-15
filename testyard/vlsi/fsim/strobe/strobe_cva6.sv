@@ -28,7 +28,8 @@ module strobe;
 
     // CVA6 can retire on either of its two commit ports.
     do begin
-      @(negedge `TOPLEVEL.clock_uncore);
+      // Retirement is valid at the active clock edge.
+      @(posedge `TOPLEVEL.clock_uncore);
       commit_hit = 1'b0;
 
       if ((`TOPLEVEL.system.tile_prci_domain
