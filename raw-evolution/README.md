@@ -31,6 +31,10 @@ Fitness is the percentage of the fixed 500 faults that Z01X detects. Every
 candidate gets a private copy of the clean database, so it cannot reuse results
 from another candidate.
 
+Fault runs disable CVA6's ordinary instruction trace. Z01X treats its `$fwrite`
+calls as illegal after injection. Optional monitor traces are independent and
+remain disabled unless a separate replay requests them explicitly.
+
 ### Small numerical example
 
 Suppose `raw_body` starts at `0x10200`. Its first instruction retires on commit

@@ -45,18 +45,23 @@ def require(path: Path, label: str) -> None:
         raise FileNotFoundError(f"{label} not found: {path}")
 
 
-def check() -> None:
+def check(require_faults: bool = True) -> None:
     """Check every file and tool before a long run."""
-    # These files come from the platform and its earlier Z01X build.
-    for path, label in (
+    # These files come from the platform and its Z01X build.
+    required = [
         (config.CC, "compiler"),
         (config.NM, "symbol reader"),
         (config.SIMV, "fault simulator"),
         (config.DAIDIR, "simulator data"),
         (config.SFF, "fault list"),
         (config.LINKER, "linker script"),
-        (HERE / "faults.csv", "selected faults"),
-    ):
+    ]
+
+    # The first campaign is built before the seed selects its 500 faults.
+    if require_faults:
+        required.append((HERE / "faults.csv", "selected faults"))
+
+    for path, label in required:
         require(path, label)
 
     # These commands come from the active Synopsys setup.
@@ -194,7 +199,7 @@ def evaluation_digest(
 
 def build_campaign() -> Path:
     """Run the fault compiler once and keep its untouched database."""
-    check()
+    check(require_faults=False)
 
     # Reuse a complete database when it still matches the simulator.
     if campaign_is_ready():
@@ -338,6 +343,9 @@ def write_tcl(
             f"+ntb_random_seed={config.SEED}",
             f"+loadmem={binary}",
             f"+raw_body_pc={raw_body_pc:016x}",
+            # Z01X rejects the built-in tracer's $fwrite after injection.
+            # Optional monitor traces use separate plusargs when needed.
+            "+disable_instr_trace",
             "+verbose",
             "+permissive-off",
             str(binary),
