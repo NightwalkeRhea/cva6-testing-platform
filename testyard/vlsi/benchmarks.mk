@@ -29,7 +29,8 @@ ifeq ($(benchmark),cva6)
     HAMMER_EXEC        = ./vlsi-cva6
     TOOLS_CONF         ?= example-tools.yml
     TECH_CONF          ?= ./technology/$(technology_name).yml
-    FSIM_CONF_FILE     ?= ./fsim/example-fsim-$(FAULT_MODEL).yml
+    FSIM_CONF_FILE     ?= ./fsim/example-fsim-cva6-saf.yml
+    FSIM_STROBE_FILE   ?= $(vlsi_dir)/fsim/strobe/strobe_cva6.sv
     DESIGN_CONFS       ?= ./example-designs/$(technology_name)-$(toolchain).yml
     VLSI_OBJ_DIR       ?= build-$(technology_name)-$(toolchain)-$(benchmark)
     INPUT_CONFS        ?= $(TOOLS_CONF) $(TECH_CONF) $(DESIGN_CONFS) $(EXTRA_CONFS)
@@ -84,4 +85,3 @@ ifeq ($(benchmark),radiance)
     VLSI_OBJ_DIR      ?= build-$(technology_name)-$(toolchain)-$(benchmark)
     INPUT_CONFS       ?= $(TOOLS_CONF) $(TECH_CONF) $(DESIGN_CONFS) $(EXTRA_CONFS)
 endif
-

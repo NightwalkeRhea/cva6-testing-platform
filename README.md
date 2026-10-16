@@ -3,10 +3,7 @@ A unified validation platform for CVA6. It brings together CAD Chipyard, CAD Ham
 
 ## Start here
 
-This is the complete path from a fresh clone to the RAW experiment. You do not
-need to open another README to discover the next command.
-
-Run this flow on the CAD server. It needs VCS, Z01X, and the Nangate45 files.
+This is the complete path from a fresh clone to the RAW experiment.
 
 ### 1. Clone the platform
 
@@ -21,11 +18,10 @@ clone does not need to be inside your home directory.
 
 ### 2. Set up Testyard once
 
-Do not activate the EDA tools yet. Their libraries can interfere with Conda.
+Do not activate the EDA tools if you can. Their libraries can interfere with Conda.
 
 ```bash
 cd "$CVA6_PLATFORM"
-activate_proxies
 
 ./testyard/build-setup.sh --use-lean-conda --cva6-only
 source testyard/env.sh
@@ -33,18 +29,14 @@ source testyard/env.sh
 python -m pip install -e ./hammer
 python -c 'import hammer.fsim.vc_zoix as p; print(p.__file__)'
 
-deactivate_proxies
 ```
 
 The last command from Python must print a path inside this clone's `hammer/`
-directory. The setup takes a while, but each clone needs it only once.
+directory. The setup takes a while, but hopefully you will need to build it only once.
 
-`activate_proxies` and `deactivate_proxies` are helpers on the CAD server. Skip
-those two lines on a machine that does not need a proxy.
 
 ### 3. Build MicroGP once
-
-Keep the EDA tools inactive while CMake runs.
+Build MicroGP using cmake and export its path.
 
 ```bash
 cd "$CVA6_PLATFORM"
@@ -56,11 +48,16 @@ cmake -S microgp/src -B microgp/build \
 cmake --build microgp/build --target ugp3 --parallel 16
 
 export PATH="$CVA6_PLATFORM/microgp/build/Frontends/ugp3:$PATH"
+
+```
+Run that `export` once in each new shell. If you prefer, add the same line to
+`~/.bashrc` and replace `$CVA6_PLATFORM` with the absolute path of your clone.
+
+If you want to find and run it, you can use
+```bash
 command -v ugp3
 ugp3 --version
 ```
-
-The last two commands must find and run `ugp3`.
 
 ### 4. Enter the environment
 
@@ -71,22 +68,22 @@ cd /path/to/cva6-testing-platform
 export CVA6_PLATFORM="$PWD"
 
 source testyard/env.sh
-deactivate_proxies 2>/dev/null || true
-activate_eda_tools
 
 export RISCV="$CVA6_PLATFORM/testyard/.conda-env/riscv-tools"
-export PATH="$RISCV/bin:$CVA6_PLATFORM/microgp/build/Frontends/ugp3:$PATH"
+export PATH="$RISCV/bin:$PATH"
 hash -r
+```
 
+Replace `/path/to/cva6-testing-platform` with the path of your clone. If you did
+not add MicroGP to `~/.bashrc`, you need to export its path in every new shell first. (step 3)
+These four checks must print a path, then you're good to go!
+
+```bash
 command -v riscv64-unknown-elf-gcc
 command -v vc_fcc
 command -v vc_fcm
 command -v ugp3
 ```
-
-Replace `/path/to/cva6-testing-platform` with the path of your clone. All four
-checks must print a path.
-
 ### 5. Compile the seed
 
 The seed contains the first hand-written RAW test. MicroGP later changes the
@@ -111,21 +108,14 @@ set -o pipefail
 
 make redo-fsim-rtl \
   benchmark=cva6 \
-  technology_name=nangate45 \
-  toolchain=commercial \
   BINARY="$SEED_BIN" \
-  LOADMEM="$SEED_BIN" \
-  RISCV="$RISCV" \
-  FAULT_MODEL=saf \
-  FSIM_CONF_FILE=./fsim/example-fsim-cva6-saf.yml \
-  FSIM_STROBE_FILE="$PWD/fsim/strobe/strobe_cva6.sv" \
+  LOADMEM=1 \
   HAMMER_D_DEPS= \
   HAMMER_DEPENDENCIES= \
   HAMMER_EXTRA_ARGS="--to_step fgen" \
   2>&1 | tee "$HOME/cva6-raw-fgen.log"
 
-FGEN_STATUS=${PIPESTATUS[0]}
-echo "Fault-generation status: $FGEN_STATUS"
+echo "Fault-generation status: ${PIPESTATUS[0]}"
 ```
 
 Do not continue unless the status is zero.
@@ -140,12 +130,10 @@ cd "$CVA6_PLATFORM/raw-evolution"
 set -o pipefail
 
 make campaign 2>&1 | tee "$HOME/cva6-raw-campaign.log"
-CAMPAIGN_STATUS=${PIPESTATUS[0]}
-echo "Campaign status: $CAMPAIGN_STATUS"
+echo "Campaign status: ${PIPESTATUS[0]}"
 
 make validate 2>&1 | tee "$HOME/cva6-raw-validate.log"
-VALIDATE_STATUS=${PIPESTATUS[0]}
-echo "Validation status: $VALIDATE_STATUS"
+echo "Validation status: ${PIPESTATUS[0]}"
 ```
 
 Both status values must be zero. The validation runs only four faults and
@@ -161,8 +149,7 @@ cd "$CVA6_PLATFORM/raw-evolution"
 set -o pipefail
 
 python3 evaluate.py --full seed.S 2>&1 | tee "$HOME/cva6-raw-seed-full.log"
-FULL_STATUS=${PIPESTATUS[0]}
-echo "Full seed status: $FULL_STATUS"
+echo "Full seed status: ${PIPESTATUS[0]}"
 
 FULL_REPORT=$(find "$PWD/runs/full" -type f -name faults.rpt -print -quit)
 echo "Detailed report: ${FULL_REPORT:-not found}"

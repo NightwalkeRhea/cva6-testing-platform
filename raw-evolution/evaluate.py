@@ -32,7 +32,7 @@ NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
 # Read the status of each port fault from the current SFF.
 SFF_FAULT = re.compile(r'^\s*(?P<status>[A-Z0-9]+)\s+[01]\s+\{PORT\s+"')
 # This line proves that the strobe reached raw_body and injected faults.
-INJECTION_MARKER = "CVA6 RAW: injecting faults"
+INJECTION_MARKER = "Info : Injecting "
 
 # VCS and Z01X install two launchers for the same fault compiler.
 # Compare their release instead of their different launcher paths.
@@ -380,7 +380,7 @@ report -campaign {config.CAMPAIGN} -summaryonly -report {{{report}}} -overwrite
 
 
 def require_injection_marker(work: Path) -> None:
-    """Require one injection marker from every simulator task log."""
+    """Require Z01X to confirm injection once in every simulator task."""
     task_logs = list((work / "fcm.dir").rglob("out.log"))
     simulator_logs: list[Path] = []
     evidence: list[str] = []
@@ -393,7 +393,7 @@ def require_injection_marker(work: Path) -> None:
         count = text.count(INJECTION_MARKER)
         if count != 1:
             raise RuntimeError(
-                f"expected one injection marker in {log}, found {count}; "
+                f"expected one Z01X injection marker in {log}, found {count}; "
                 "preserving the run for review"
             )
         marker_line = next(line for line in text.splitlines() if INJECTION_MARKER in line)

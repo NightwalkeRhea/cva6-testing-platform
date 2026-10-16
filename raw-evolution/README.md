@@ -91,8 +91,9 @@ export PATH="$PWD/microgp/build/Frontends/ugp3:$PATH"
 command -v ugp3
 ugp3 --version
 ```
-The last two commands must find and
-run `ugp3`.
+Run that `export` once in each new shell. If you prefer, add the same line to
+`~/.bashrc` with the absolute path of your clone. Do not add it more than once.
+The last two commands must find and run `ugp3`.
 
 ## Enter the working environment
 
@@ -106,7 +107,7 @@ deactivate_proxies
 activate_eda_tools
 
 export RISCV="$PWD/testyard/.conda-env/riscv-tools"
-export PATH="$RISCV/bin:$PWD/microgp/build/Frontends/ugp3:$PATH"
+export PATH="$RISCV/bin:$PATH"
 hash -r
 
 command -v riscv64-unknown-elf-gcc
@@ -115,7 +116,9 @@ command -v vc_fcm
 command -v ugp3
 ```
 
-Of course, don't continue if one of those four commands prints nothing.
+If MicroGP is not in `~/.bashrc`, first run its single `export` from the build
+section above. Of course, don't continue if one of those four checks prints
+nothing.
 
 ## Check the existing CVA6 build
 
@@ -147,9 +150,7 @@ set -o pipefail
 
 make prepare
 make campaign 2>&1 | tee "$HOME/raw-axi-campaign.log"
-CAMPAIGN_STATUS=${PIPESTATUS[0]}
-
-echo "Campaign status: $CAMPAIGN_STATUS"
+echo "Campaign status: ${PIPESTATUS[0]}"
 python3 -c 'import evaluate; print("Campaign ready:", evaluate.campaign_is_ready())'
 ```
 
@@ -159,13 +160,12 @@ Now test only four faults:
 
 ```bash
 make validate 2>&1 | tee "$HOME/raw-axi-validate.log"
-VALIDATE_STATUS=${PIPESTATUS[0]}
-echo "Validation status: $VALIDATE_STATUS"
+echo "Validation status: ${PIPESTATUS[0]}"
 ```
 
 The run above must finish with status zero. Its run directory must also contain
-`injection-markers.txt`, where these markers show the cycle, commit port, and address
-that started injection.
+`injection-markers.txt`. Each line records Z01X's confirmation and the simulation
+time when it injected the faults.
 
 ## Create the baseline before selecting 500 faults
 
@@ -176,8 +176,7 @@ cd "$HOME/cva6-testing-platform/raw-evolution"
 set -o pipefail
 
 python3 evaluate.py --full seed.S 2>&1 | tee "$HOME/raw-axi-seed-full.log"
-FULL_STATUS=${PIPESTATUS[0]}
-echo "Full seed status: $FULL_STATUS"
+echo "Full seed status: ${PIPESTATUS[0]}"
 ```
 
 This will create a summary and a detailed report under `runs/full/`. Keep both.
