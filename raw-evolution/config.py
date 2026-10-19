@@ -57,9 +57,9 @@ MAX_CYCLES = 10_000_000
 # The existing fault database uses this campaign name.
 CAMPAIGN = "chiptop0"
 
-# Start with difficult faults, plus detected faults as a control group.
-# The values add up to 500.
-QUOTAS = {"ND": 250, "NC": 100, "NO": 50, "DD": 100}
+# Use faults missed by the seed, plus detections we want to retain.
+# These labels come from the full seed run with AXI observation.
+QUOTAS = {"ND": 400, "DD": 100}
 
 # Ignore faults outside the two blocks that handle RAW behavior.
 FOCUS = ("i_issue_read_operands", "i_scoreboard")

@@ -185,23 +185,23 @@ This will create a summary and a detailed report under `runs/full/`. Keep both.
 Choose the fixed 500 faults from this detailed report. Its labels describe how
 the seed behaves with the current injection point and AXI observation.
 
-Now find that detailed report and create the fixed list:
+Select 400 faults the seed missed (ND) and 100 it detected (DD). The selector
+spreads them across signal families and stuck values using the fixed random seed.
+Pass the exact report from your baseline, rather than the first report found
+under `runs/full/`:
 
 ```bash
-FULL_REPORT=$(find "$PWD/runs/full" -type f -name faults.rpt -print -quit)
-
-test -f "$FULL_REPORT" || {
-    echo "ERROR: the detailed report is missing"
-    exit 1
-}
-
-echo "Selecting faults from: $FULL_REPORT"
-python3 select_faults.py "$FULL_REPORT"
+python3 select_faults.py runs/full/<your-run>/faults.rpt
 wc -l faults.csv
 ```
 
 The selector creates `raw-evolution/faults.csv`. Keep this file unchanged throughout the
 evolution so every candidate runs against the same faults.
+
+The baseline completed on 19 October 2026 is on cattivo at
+`raw-evolution/runs/full/d83a55ef50a29e94/`. It detected 6,967 of 37,184 faults
+with AXI observation: 22,957 ND, 5 PD, and 7,255 untestable. Preserve its
+`summary.rpt`, `faults.rpt`, and `injection-markers.txt` before further work.
 
 ## Check MicroGP without running faults
 
