@@ -28,7 +28,7 @@ check:
 prepare:
 	python3 evaluate.py --prepare seed.S
 
-# Run vc_fcc once. Candidates copy this clean database.
+# Check campaign compilation. Each candidate builds its own database.
 campaign:
 	python3 evaluate.py --campaign
 

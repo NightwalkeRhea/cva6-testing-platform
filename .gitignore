@@ -23,6 +23,10 @@ __pycache__/
 /results/
 /artifacts/
 
+# Local files from EvoSBST
+/evofsimflow/
+/evofsimflow-patches/
+
 # MicroGP: configure and build out of source
 /microgp/build/
 

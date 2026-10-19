@@ -28,8 +28,10 @@ seed did not detect (ND), 100 that it did not control (NC), 50 that it did not
 observe (NO), and 100 that it detected (DD). For now, we're using a fixed random seed to keep the list unchanged for every candidate.
 
 Fitness is the percentage of the fixed 500 faults that Z01X detects. Every
-candidate gets a private copy of the clean database, so it cannot reuse results
-from another candidate.
+candidate gets a fresh database compiled from the same SFF, so it cannot reuse
+results from another candidate. Databases remain in each run directory because
+Z01X may keep their servers running after simulation. This uses more disk space
+and adds fault compilation to each evaluation.
 
 Fault runs disable CVA6's ordinary instruction trace. Z01X treats its `$fwrite`
 calls as illegal after injection. Optional monitor traces are independent and
