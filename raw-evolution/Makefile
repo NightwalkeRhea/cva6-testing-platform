@@ -2,7 +2,7 @@
 SHELL := /usr/bin/env bash
 
 # These names are commands, not files to create.
-.PHONY: help select check prepare campaign validate seed smoke evolve
+.PHONY: help select check prepare campaign validate seed smoke evolve replay
 
 # Show the short path through this flow.
 help:
@@ -39,6 +39,10 @@ validate:
 # Measure the exact program that starts generation zero.
 seed:
 	python3 evaluate.py seed.S
+
+# Compare the clean seed with two missed faults using optional monitor traces.
+replay:
+	python3 replay.py
 
 # Check the MicroGP files and compiler without calling Z01X.
 smoke:

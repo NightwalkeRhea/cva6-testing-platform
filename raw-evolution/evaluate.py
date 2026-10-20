@@ -322,6 +322,7 @@ def write_tcl(
     ids: list[int] | None,
     report: Path,
     raw_body_pc: int,
+    trace_dir: Path | None = None,
 ) -> None:
     """Write the small Tcl script that runs one candidate."""
     # Refuse a stale or hand-written address before simulation starts.
@@ -354,6 +355,14 @@ def write_tcl(
         )
     )
 
+    # Replay one fault at a time; ordinary fitness runs leave tracing off.
+    if trace_dir is not None:
+        args = args.replace(
+            "+permissive-off",
+            f"+dependency_trace_file={trace_dir / 'dependency.csv'} "
+            f"+raw_checker_trace_file={trace_dir / 'raw-checker.csv'} +permissive-off",
+        )
+
     # Omit -fids only for the final comparison against the complete list.
     if ids is None:
         fsim_command = "fsim -verbose -no_coats"
@@ -366,7 +375,7 @@ def write_tcl(
         f"""# Limit how many jobs Z01X may run at once.
 set_config -global_max_jobs {config.WORKERS}
 # Run ordinary faults in parallel.
-set_config -fsim_mode concurrent
+set_config -fsim_mode {'serial' if trace_dir is not None else 'concurrent'}
 # Print progress every two minutes.
 set_config -update_interval 120
 # Use the candidate as the only test case.

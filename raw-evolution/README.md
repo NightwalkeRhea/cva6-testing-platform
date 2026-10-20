@@ -203,6 +203,22 @@ The baseline completed on 19 October 2026 is on cattivo at
 with AXI observation: 22,957 ND, 5 PD, and 7,255 untestable. Preserve its
 `summary.rpt`, `faults.rpt`, and `injection-markers.txt` before further work.
 
+## Replay missed faults with the monitors
+
+After the seed scores 20% on the fixed 500 faults, run `make replay` in tmux.
+It runs the clean seed and then faults 645 and 648 separately in serial mode.
+These faults affect `fwd_i.issue_pointer` and must be ND in `faults.csv`.
+
+The command prints a new directory under `runs/monitor-replay-*`. It keeps the
+inputs, logs, both monitor traces, and `comparison.json`. That comparison lists
+changed fields and the first few examples. If the event sequence diverges, it
+stops pairing rows and records the first mismatch. A trace difference explains
+internal behavior; the AXI strobe still decides fault detection.
+
+This uses real simulations and fresh databases. If Z01X rejects monitor file
+output as IF, the command stops and preserves the logs. Replay with Z01X must
+be validated on the server; compiling the script alone cannot prove it works.
+
 ## Check MicroGP without running faults
 
 ```bash
