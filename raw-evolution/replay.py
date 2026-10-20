@@ -10,6 +10,22 @@ import config
 import evaluate
 
 
+def require_fault_injection(work: Path) -> None:
+    """Check injected tasks, excluding serial mode's fault-free tsim tasks."""
+    logs = [log for log in (work / "fcm.dir").rglob("out.log")
+            if log.parent.name.startswith("fsim:")]
+    if not logs:
+        raise RuntimeError(f"no fsim task logs below {work}; inspect fcm.log")
+    evidence = []
+    for log in logs:
+        lines = [line for line in log.read_text(errors="replace").splitlines()
+                 if evaluate.INJECTION_MARKER in line]
+        if len(lines) != 1:
+            raise RuntimeError(f"expected one injection marker in {log}, found {len(lines)}")
+        evidence.append(f"{log}: {lines[0]}")
+    (work / "injection-markers.txt").write_text("\n".join(evidence) + "\n")
+
+
 def compare(clean: Path, faulty: Path) -> dict:
     """Compare matching events; never pair unrelated rows after divergence."""
     with clean.open(newline="") as stream:
@@ -90,7 +106,7 @@ def main():
                            trace_dir=work)
         evaluate.run(["vc_fcm", "-tcl_script", str(work / "fsim.tcl"),
                       "-campaign", config.CAMPAIGN, "-connect"], work, work / "fcm.log")
-        evaluate.require_injection_marker(work)
+        require_fault_injection(work)
         report = (work / "summary.rpt").read_text()
         if "Illegal File I/O" in report:
             raise RuntimeError(f"monitor output caused IF; inspect {work}; no comparison accepted")
