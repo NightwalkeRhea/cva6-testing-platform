@@ -64,20 +64,25 @@ def compare(clean: Path, faulty: Path) -> dict:
 def main():
     evaluate.check()
     # Freeze the targets to the two missed pointer faults already reviewed.
-    with (evaluate.HERE / "faults.csv").open(newline="") as stream:
-        selected = {int(row["fid"]): row for row in csv.DictReader(stream)}
+    selected = {}
+    for line in config.SFF.read_text(errors="replace").splitlines():
+        match = evaluate.SFF_FAULT.match(line)
+        if match:
+            fid = len(selected) + 1
+            selected[fid] = {"fid": str(fid), **match.groupdict()}
     for fid in (645, 648):
         row = selected.get(fid)
-        if row is None or row["status"] != "ND" or "fwd_i.issue_pointer[" not in row["path"]:
-            raise RuntimeError(f"FID {fid} must be an ND issue_pointer fault in faults.csv")
+        if row is None or "fwd_i.issue_pointer[" not in row["path"]:
+            raise RuntimeError(f"FID {fid} must be an issue_pointer fault in the current SFF")
 
     evaluate.RUNS.mkdir(exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="monitor-replay-", dir=evaluate.RUNS))
     print(f"Replay directory: {root}", flush=True)
     # Keep the inputs alongside the evidence so later edits cannot obscure them.
     import shutil
-    for name in ("seed.S", "harness.c", "faults.csv", "config.py"):
+    for name in ("seed.S", "harness.c", "config.py"):
         shutil.copy2(evaluate.HERE / name, root / name)
+    shutil.copy2(config.SFF, root / "faults.sff")
     binary = evaluate.compile_program(root / "seed.S", root)
     pc = evaluate.raw_body_address(binary)
     clean = root / "clean"
@@ -100,12 +105,11 @@ def main():
     for fid in (645, 648):
         work = root / f"fid-{fid}"
         work.mkdir()
-        print(f"Compiling database and replaying FID {fid}", flush=True)
-        evaluate.compile_campaign(work)
+        print(f"Copying database and replaying FID {fid}", flush=True)
+        evaluate.copy_campaign(work)
         evaluate.write_tcl(work / "fsim.tcl", binary, [fid], work / "summary.rpt", pc,
                            trace_dir=work)
-        evaluate.run(["vc_fcm", "-tcl_script", str(work / "fsim.tcl"),
-                      "-campaign", config.CAMPAIGN, "-connect"], work, work / "fcm.log")
+        evaluate.run_fcm(work, work / "fsim.tcl", work / "fcm.log")
         require_fault_injection(work)
         report = (work / "summary.rpt").read_text()
         if "Illegal File I/O" in report:
