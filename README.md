@@ -10,8 +10,30 @@ on the synthesized gate-level netlist.
 ## 1. Install
 
 Use a machine with VCS, Z01X, and the Nangate45 files configured for Testyard.
-Install Conda, CMake, and a C++ compiler, and check that you can access the Git
+Install CMake and a C++ compiler, and check that you can access the Git
 submodules. Use VCS and Z01X 2025.06-SP2 to match the supplied configuration.
+
+First install Miniconda, following [README_cad.md](testyard/README_cad.md#setup-instruction-for-testyard-and-hammer-for-the-cads-servers).
+On Linux x86_64, run the following from your home directory and accept the
+default installation path, `$HOME/miniconda3`. Skip this installation if
+`conda --version` already works.
+
+```bash
+cd "$HOME"
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+```
+
+Make Conda available in the current shell before running setup:
+
+```bash
+export PATH="$HOME/miniconda3/bin:$PATH"
+conda --version
+```
+
+Continue only when it prints a version. Add the export to `~/.bashrc` if you
+want it available in new shells too. If you chose another installation path,
+use that path instead.
 
 ```bash
 git clone git@github.com:NightwalkeRhea/cva6-testing-platform.git
