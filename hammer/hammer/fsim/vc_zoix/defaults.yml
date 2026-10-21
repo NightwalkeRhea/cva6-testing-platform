@@ -22,5 +22,9 @@ fsim.vc_zoix:
   # Use at your own risk - it is known to be buggy!
   fgp: false
 
+  # Keep the existing exported SFF when rerunning an unchanged campaign.
+  # Requires a completed FaultList; missing files or generation recipes fail.
+  reuse_generated_faults: false
+
   fcc_additional_args: [] # Options to add during the fault generation
 

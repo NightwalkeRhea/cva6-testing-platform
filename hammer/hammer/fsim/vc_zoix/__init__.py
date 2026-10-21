@@ -21,6 +21,20 @@ import json
 import subprocess
 from multiprocessing import Process
 
+
+def sff_has_section(text: str, name: str) -> bool:
+    """Ignore comments and quoted strings when checking SFF directives."""
+    text = re.sub(r'"(?:\\.|[^"\\])*"|\#[^\n]*|//[^\n]*|/\*.*?\*/',
+                  lambda match: "\n" * match.group().count("\n"), text,
+                  flags=re.DOTALL)
+    match = re.search(r"\b" + re.escape(name) + r"\s*\{", text)
+    if match is None:
+        return False
+    if name == "FaultList":
+        return re.match(r"\s*[^\s}]", text[match.end():]) is not None
+    return True
+
+
 class VC_ZOIX(HammerFaultSimTool, SynopsysTool):
 
     def append_to_args(self, file_path: str, string_to_append: str) -> bool:
@@ -457,9 +471,7 @@ class VC_ZOIX(HammerFaultSimTool, SynopsysTool):
                 internal_standard_fault_format = os.path.join(self.run_dir, self.fault_model, benchmark_name, filename + "_" + self.fault_model + "_" + self.tb_dut.split(".")[-1] + ".sff")
                 shutil.copy(self.standard_fault_format, internal_standard_fault_format)
                 with open(self.standard_fault_format, "r") as fin:
-                    for line in fin:
-                        if "FaultGenerate" in line:
-                            self.fsim_generate_faults = True 
+                    self.fsim_generate_faults = sff_has_section(fin.read(), "FaultGenerate")
                 if self.fault_model == "sdf":
                     if not(self._fuse_slack_with_sff(self.slack_file, internal_standard_fault_format)):
                         return False
@@ -780,6 +792,19 @@ class VC_ZOIX(HammerFaultSimTool, SynopsysTool):
     def fgen(self) -> bool:
         campaign_simv_daidir = self.get_setting("fsim.inputs.campaign_simv_daidir")
         sff_report_path = os.path.join(self.run_dir, self.fault_model + "_" + self.campaign_tb_dut.split(".")[-1] + ".sff")
+
+        # Reuse only an existing explicit list, never a generation recipe.
+        if self.get_setting("fsim.vc_zoix.reuse_generated_faults"):
+            if not os.path.isfile(sff_report_path):
+                self.logger.error(f"No generated fault list at {sff_report_path}; run fgen once first")
+                return False
+            with open(sff_report_path) as source:
+                text = source.read()
+            if not sff_has_section(text, "FaultList") or sff_has_section(text, "FaultGenerate"):
+                self.logger.error(f"Expected an explicit FaultList without FaultGenerate: {sff_report_path}")
+                return False
+            self.logger.info(f"Reusing generated faults: {sff_report_path}")
+            return True
         
         fcc_bin = self.get_setting("fsim.vc_zoix.vc_fcc_bin")
         if not os.path.isfile(fcc_bin):
