@@ -56,3 +56,6 @@ CYCLE_FLOOR = 60_000
 
 # The existing fault database uses this campaign name.
 CAMPAIGN = "chiptop0"
+
+# Freeze the reference once before evolution; never change it during a run.
+FITNESS_REFERENCE = Path(__file__).resolve().parent / "results/fitness-reference.json"

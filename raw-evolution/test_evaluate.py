@@ -1,4 +1,6 @@
 """Check parallel scoring and probes without EDA tools."""
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,6 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import evaluate
+import replay
+import smoke
+from select_faults import read_faults
 
 
 class EvaluationTests(unittest.TestCase):
@@ -56,7 +61,7 @@ class EvaluationTests(unittest.TestCase):
              patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output)}), \
              patch.object(evaluate, "score", side_effect=score):
             self.assertEqual(evaluate.main(), 0)
-        self.assertEqual(output.read_text().splitlines(), [f"{i:.6f}" for i in range(16)])
+        self.assertEqual(output.read_text().splitlines(), [f"{i:.12f} 0" for i in range(16)])
 
     def test_duplicate_programs_run_faults_once_with_measured_cap(self):
         work = self.root / "same"
@@ -170,6 +175,167 @@ class EvaluationTests(unittest.TestCase):
         with patch.object(evaluate, "run", side_effect=failure):
             with self.assertRaises(evaluate.InvalidProgram):
                 evaluate.compile_program(self.root / "bad.S", self.root)
+
+    def full_report(self, name, statuses):
+        work = self.root / name
+        work.mkdir()
+        rows = [f' < 0> {status} 0 {{PORT "core.signal{i}"}}'
+                for i, status in enumerate(statuses)]
+        (work / "faults.rpt").write_text("FaultList {\n" + "\n".join(rows) + "\n}\n")
+        (work / "summary.rpt").write_text(
+            f"# Number of Faults: {len(statuses)}\n# Detected DG {statuses.count('DD')}\n"
+            f"# Not Attempted NA {statuses.count('NA')}\n")
+        (work / "injection-markers.txt").write_text("Info : Injecting faults\n")
+        return work
+
+    def test_reference_and_detected_ids_reuse_the_parser(self):
+        base = self.full_report("base", ["DD", "ND", "DD", "UU"])
+        candidate = self.full_report("candidate", ["ND", "DD", "DD", "UU"])
+        sff = self.root / "faults.sff"
+        sff.write_text((base / "faults.rpt").read_text().replace("< 0>", ""))
+        reference_path = self.root / "reference.json"
+        with patch.object(evaluate.config, "SFF", sff), \
+             patch.object(evaluate.config, "FITNESS_REFERENCE", reference_path), \
+             patch.object(evaluate, "campaign_fingerprint", return_value={"build": "same"}):
+            evaluate.freeze_reference(base / "faults.rpt")
+            reference = evaluate.load_reference(required=True)
+            self.assertEqual(reference["detected_ids"], [1, 3])
+            with self.assertRaises(FileExistsError):
+                evaluate.freeze_reference(base / "faults.rpt")
+            evaluate.save_detected_ids(candidate)
+            self.assertEqual(json.loads((candidate / "detected-ids.json").read_text())[
+                "detected_ids"], [2, 3])
+            with patch.object(evaluate, "RUNS", self.root), \
+                 patch.object(evaluate, "evaluation_digest", return_value="../candidate"):
+                (self.root / "full").mkdir()
+                self.assertEqual(evaluate.complementary_detections(Path("BEST_raw"), reference), 1)
+            with patch.object(evaluate, "campaign_fingerprint", return_value={"build": "other"}):
+                with self.assertRaisesRegex(ValueError, "does not match"):
+                    evaluate.load_reference()
+
+    def test_detection_evidence_refuses_wrong_counts_ids_and_file_io(self):
+        work = self.full_report("candidate", ["DD", "ND"])
+        sff = self.root / "faults.sff"
+        sff.write_text((work / "faults.rpt").read_text().replace("< 0>", ""))
+        with patch.object(evaluate.config, "SFF", sff):
+            (work / "summary.rpt").write_text("# Number of Faults: 2\n# Detected DG 2\n")
+            with self.assertRaisesRegex(ValueError, "do not match DG"):
+                evaluate.detection_evidence(work / "faults.rpt")
+            (work / "summary.rpt").write_text("# Number of Faults: 2\n# Detected DG 1\n")
+            text = (work / "faults.rpt").read_text()
+            (work / "faults.rpt").write_text(text.replace(" ND ", " IF "))
+            with self.assertRaisesRegex(ValueError, "illegal file I/O"):
+                evaluate.detection_evidence(work / "faults.rpt")
+            (work / "faults.rpt").write_text(text.replace("core.signal1", "core.other"))
+            with self.assertRaisesRegex(ValueError, "do not match the current SFF"):
+                evaluate.detection_evidence(work / "faults.rpt")
+
+    def test_parser_never_skips_other_fault_classes(self):
+        report = self.root / "mixed.rpt"
+        report.write_text('FaultList {\n< 1> ND 0 {PORT "core.a"}\n'
+                          '< 1> ND 0 {NET "core.b"}\n}\n')
+        with self.assertRaisesRegex(ValueError, "unsupported fault entry"):
+            read_faults(report)
+
+    def test_evolution_requires_a_reference_before_simulating(self):
+        with patch.object(sys, "argv", ["evaluate.py", "--require-reference", "seed.S"]), \
+             patch.object(evaluate.config, "FITNESS_REFERENCE", self.root / "absent.json"), \
+             patch.object(evaluate, "score") as score:
+            with self.assertRaisesRegex(FileNotFoundError, "freeze a full report"):
+                evaluate.main()
+        score.assert_not_called()
+
+    def test_two_values_are_written_in_order(self):
+        output = self.root / "fitness.output"
+        reference = {"detected_ids": [1, 3]}
+        with patch.object(sys, "argv", ["evaluate.py", "--require-reference", "BEST_raw"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output)}), \
+             patch.object(evaluate, "load_reference", return_value=reference) as load, \
+             patch.object(evaluate, "score", return_value=20.4), \
+             patch.object(evaluate, "complementary_detections", return_value=4) as extra:
+            evaluate.main()
+        load.assert_called_once_with(True)
+        extra.assert_called_once_with(Path("BEST_raw"), reference)
+        self.assertEqual(output.read_text(), "20.400000000000 4\n")
+
+    def test_smoke_uses_two_values_without_requiring_reference(self):
+        output = self.root / "fitness.output"
+        with patch.object(sys, "argv", ["evaluate.py", "--smoke", "seed.S"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output)}), \
+             patch.object(evaluate, "compile_smoke", return_value=self.root / "candidate.riscv"), \
+             patch.object(evaluate, "load_reference") as load:
+            evaluate.main()
+        load.assert_not_called()
+        self.assertEqual(output.read_text(), "0.000000 0\n")
+        population = self.root / "population.settings.xml"
+        smoke.small_population(population)
+        self.assertIn('<fitnessParameters value="2"', population.read_text())
+        self.assertIn("--smoke", population.read_text())
+        self.assertNotIn("--require-reference", population.read_text())
+
+    def test_full_score_saves_ids_on_fresh_and_cached_results(self):
+        fixture = self.full_report("fixture", ["DD", "ND", "DD", "UU"])
+        sff = self.root / "faults.sff"
+        sff.write_text((fixture / "faults.rpt").read_text().replace("< 0>", ""))
+        work = self.root / "full/candidate"
+
+        def run(work, *args):
+            for name in ("summary.rpt", "faults.rpt", "injection-markers.txt"):
+                shutil.copy2(fixture / name, work / name)
+
+        with patch.object(evaluate.config, "SFF", sff), \
+             patch.object(evaluate, "RUNS", self.root), \
+             patch.object(evaluate, "evaluation_digest", return_value="candidate"), \
+             patch.object(evaluate, "prepare", return_value=(work, work / "fsim.tcl")), \
+             patch.object(evaluate, "probe", return_value=100000), \
+             patch.object(evaluate, "raw_body_address", return_value=0x80000290), \
+             patch.object(evaluate, "copy_campaign") as copy, \
+             patch.object(evaluate, "run_fcm", side_effect=run) as fcm, \
+             patch.object(evaluate, "require_injection_marker"), \
+             patch.object(evaluate, "remove_run_data"):
+            self.assertEqual(evaluate.score(Path("seed.S")), 50.0)
+            self.assertEqual(evaluate.score(Path("seed.S")), 50.0)
+        self.assertEqual(fcm.call_count, 1)
+        self.assertEqual(copy.call_count, 1)
+        self.assertEqual(json.loads((work / "detected-ids.json").read_text())[
+            "detected_ids"], [1, 3])
+        self.assertFalse((work / "detected-ids.json.tmp").exists())
+
+    def test_replay_accepts_a_winner_and_explicit_fault_ids(self):
+        sff = self.root / "faults.sff"
+        sff.write_text('FaultList {\nNA 0 {PORT "core.a"}\nNA 1 {PORT "core.b"}\n}\n')
+        winner = self.root / "BEST_raw"
+        winner.write_text("winner assembly\n")
+
+        def clean(command, work, log):
+            log.write_text("CVA6 RAW: injecting faults\n"
+                           "*** PASSED *** Completed after 100000 simulation cycles\n")
+
+        def build(source, work):
+            self.assertEqual(source.read_text(), "winner assembly\n")
+            return work / "candidate.riscv"
+
+        def fcm(work, *args):
+            (work / "summary.rpt").write_text("# Detected DG 1\n")
+
+        with patch.object(replay.evaluate, "check"), \
+             patch.object(replay.config, "SFF", sff), \
+             patch.object(replay.evaluate, "RUNS", self.root), \
+             patch.object(replay.evaluate, "compile_program", side_effect=build), \
+             patch.object(replay.evaluate, "raw_body_address", return_value=0x80000290), \
+             patch.object(replay.evaluate, "run", side_effect=clean), \
+             patch.object(replay.evaluate, "copy_campaign"), \
+             patch.object(replay.evaluate, "write_tcl") as tcl, \
+             patch.object(replay.evaluate, "run_fcm", side_effect=fcm), \
+             patch.object(replay, "require_fault_injection"), \
+             patch.object(replay, "compare", return_value={"changed_fields": {}}), \
+             patch.object(replay.evaluate, "remove_run_data"):
+            replay.main([str(winner), "--fids", "2"])
+        self.assertEqual(tcl.call_args.args[2], [2])
+        self.assertEqual(tcl.call_args.kwargs["max_cycles"], 150000)
+        result = json.loads(next(self.root.glob("monitor-replay-*/comparison.json")).read_text())
+        self.assertEqual(list(result["faults"]), ["2"])
+        self.assertEqual(Path(result["source"]).read_text(), winner.read_text())
 
 
 if __name__ == "__main__":

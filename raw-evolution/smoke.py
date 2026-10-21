@@ -39,7 +39,7 @@ def small_population(destination: Path) -> None:
     evaluator = f"python3 {HERE / 'evaluate.py'} --smoke"
     text = replace_once(
         text,
-        '<evaluatorPathName value="python3 evaluate.py" />',
+        '<evaluatorPathName value="python3 evaluate.py --require-reference" />',
         f'<evaluatorPathName value="{evaluator}" />',
     )
     destination.write_text(text)

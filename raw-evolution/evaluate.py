@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import config
+from select_faults import read_faults
 
 # Keep generated files beside this script.
 HERE = Path(__file__).resolve().parent
@@ -188,6 +189,7 @@ def evaluation_digest(
         ("source", source),
         ("harness", HERE / "harness.c"),
         ("evaluator", Path(__file__)),
+        ("parser", HERE / "select_faults.py"),
         ("config", HERE / "config.py"),
     ):
         digest.update(label.encode())
@@ -523,6 +525,80 @@ def parse_full_coverage(report: Path) -> float:
     return 100.0 * int(detected_match.group(1)) / int(total_match.group(1))
 
 
+def detection_evidence(report: Path) -> dict:
+    """Reuse the report parser and verify IDs against the full summary."""
+    summary = report.with_name("summary.rpt")
+    parse_full_coverage(summary)
+    faults = read_faults(report)
+    universe = read_faults(config.SFF)
+    if [(f.path, f.stuck_at) for f in faults] != [(f.path, f.stuck_at) for f in universe]:
+        raise ValueError(f"fault IDs do not match the current SFF: {report}")
+    text = summary.read_text()
+    total = int(TOTAL.search(text).group(1))
+    ids = [f.fid for f in faults if f.status == "DD"]
+    if len(faults) != total or len(ids) != int(DETECTED.search(text).group(1)):
+        raise ValueError(f"detailed detections do not match DG in {summary}; refusing to guess IDs")
+    if any(f.status == "IF" for f in faults):
+        raise ValueError(f"illegal file I/O in {report}; refusing to score it")
+    return {"format": 1, "total": total, "detected_ids": ids,
+            "sff_sha256": hashlib.sha256(config.SFF.read_bytes()).hexdigest(),
+            "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest()}
+
+
+def save_detected_ids(work: Path) -> None:
+    evidence = detection_evidence(work / "faults.rpt")
+    temporary = work / "detected-ids.json.tmp"
+    temporary.write_text(json.dumps(evidence, indent=2) + "\n")
+    temporary.replace(work / "detected-ids.json")
+
+
+def freeze_reference(report: Path) -> None:
+    """Freeze a chosen full report; never replace a reference implicitly."""
+    markers = report.with_name("injection-markers.txt")
+    require(markers, "evidence of injection")
+    if INJECTION_MARKER not in markers.read_text():
+        raise ValueError(f"no Z01X injection evidence in {markers}")
+    evidence = detection_evidence(report)
+    evidence.update({"report": str(report.resolve()), "campaign": campaign_fingerprint()})
+    destination = config.FITNESS_REFERENCE
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("x") as stream:
+        stream.write(json.dumps(evidence, indent=2) + "\n")
+    print(f"Frozen {len(evidence['detected_ids'])} reference detections: {destination}")
+
+
+def load_reference(required: bool = False) -> dict | None:
+    path = config.FITNESS_REFERENCE
+    if not path.exists():
+        if required:
+            raise FileNotFoundError("freeze a full report before evolution: "
+                                    "python3 evaluate.py --set-reference PATH/faults.rpt")
+        return None
+    reference = json.loads(path.read_text())
+    if (reference.get("format") != 1
+            or reference.get("campaign") != campaign_fingerprint()
+            or reference.get("sff_sha256") != hashlib.sha256(config.SFF.read_bytes()).hexdigest()):
+        raise ValueError(f"reference does not match the current campaign: {path}")
+    ids = reference["detected_ids"]
+    if (len(ids) != len(set(ids)) or any(type(fid) is not int
+            or not 1 <= fid <= reference["total"] for fid in ids)):
+        raise ValueError(f"invalid detected IDs in {path}")
+    return reference
+
+
+def complementary_detections(source: Path, reference: dict | None) -> int:
+    if reference is None:
+        return 0
+    work = RUNS / "full" / evaluation_digest(source, True)
+    if (work / "rejected.txt").exists():
+        return 0
+    evidence = json.loads((work / "detected-ids.json").read_text())
+    if (evidence["total"] != reference["total"]
+            or evidence["sff_sha256"] != reference["sff_sha256"]):
+        raise ValueError(f"candidate and reference use different faults: {work}")
+    return len(set(evidence["detected_ids"]) - set(reference["detected_ids"]))
+
+
 def prepare(
     source: Path,
     full: bool = True,
@@ -541,7 +617,10 @@ def prepare(
     work.mkdir(parents=True, exist_ok=True)
 
     # Build the binary before we create the Tcl that refers to it.
-    binary = compile_program(source, work)
+    snapshot = work / "source.S"
+    if source.resolve() != snapshot.resolve():
+        shutil.copy2(source, snapshot)
+    binary = compile_program(snapshot, work)
     raw_body_pc = raw_body_address(binary)
     tcl = work / "fsim.tcl"
     ids = None if full else selected_ids
@@ -601,6 +680,8 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
     # Reuse a score only when both permanent reports were saved.
     if completed_files == len(permanent_files):
         coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
+        if full:
+            save_detected_ids(work)
         # A previous run may have stopped after writing the report but before
         # it removed its private database. Finish that cleanup on a cache hit.
         remove_run_data(work)
@@ -647,6 +728,8 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
 
     # Read the score before removing the large temporary directories.
     coverage = parse_full_coverage(report) if full else parse_coverage(report, len(ids))
+    if full:
+        save_detected_ids(work)
     remove_run_data(work)
 
     # MicroGP maximizes the returned coverage value.
@@ -665,8 +748,14 @@ def main() -> int:
     parser.add_argument("--validate-faults", type=int, metavar="N")
     parser.add_argument("--compile", type=Path, metavar="SOURCE")
     parser.add_argument("--prepare", type=Path, metavar="SOURCE")
+    parser.add_argument("--set-reference", type=Path, metavar="REPORT")
+    parser.add_argument("--require-reference", action="store_true")
     parser.add_argument("sources", nargs="*", type=Path)
     args = parser.parse_args()
+
+    if args.set_reference:
+        freeze_reference(args.set_reference)
+        return 0
 
     # Check paths without compiling or simulating anything.
     if args.check:
@@ -699,7 +788,7 @@ def main() -> int:
             values.append(0.0)
             print(f"compiled {source}: {binary}")
         output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
-        output.write_text("".join(f"{value:.6f}\n" for value in values))
+        output.write_text("".join(f"{value:.6f} 0\n" for value in values))
         return 0
     # Normal MicroGP use must provide one or more programs.
     if not args.sources:
@@ -715,6 +804,8 @@ def main() -> int:
         validation_ids = validation_fault_ids(args.validate_faults)
         result_group = "validate"
 
+    reference = load_reference(args.require_reference) if validation_ids is None else None
+
     def evaluate_source(source):
         value = score(
             source,
@@ -722,8 +813,9 @@ def main() -> int:
             selected_ids=validation_ids,
             result_group=result_group,
         )
-        print(f"{source}: {value:.2f}%", flush=True)
-        return value
+        extra = complementary_detections(source, reference)
+        print(f"{source}: {value:.2f}%, {extra} beyond reference", flush=True)
+        return value, extra
 
     # map keeps scores in the order MicroGP supplied the programs.
     with ThreadPoolExecutor(max_workers=config.EVALUATIONS) as pool:
@@ -732,7 +824,7 @@ def main() -> int:
     # MicroGP tells us where to place the fitness values.
     # Use a local file when the variable is absent.
     output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
-    output.write_text("".join(f"{value:.6f}\n" for value in values))
+    output.write_text("".join(f"{coverage:.12f} {extra}\n" for coverage, extra in values))
     return 0
 
 

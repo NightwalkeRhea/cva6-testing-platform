@@ -1,5 +1,7 @@
 # Use Bash so recipes behave the same on the server.
 SHELL := /usr/bin/env bash
+CANDIDATE ?= seed.S
+FIDS ?= 645 648
 
 # These names are commands, not files to create.
 .PHONY: help check prepare campaign validate seed smoke evolve replay
@@ -13,7 +15,8 @@ help:
 	  'make validate Run four faults before a long campaign' \
 	  'make seed    Score the program placed in generation zero' \
 	  'make smoke   Generate and compile two programs without faults' \
-	  'make evolve  Evolve programs on the complete fault campaign'
+	  'make evolve  Evolve programs on the complete fault campaign' \
+	  'make replay CANDIDATE=BEST_raw FIDS="645 648"  Trace a candidate'
 
 # Confirm that all files and Synopsys tools are available.
 check:
@@ -35,9 +38,9 @@ validate:
 seed:
 	python3 evaluate.py seed.S
 
-# Compare the clean seed with two missed faults using optional monitor traces.
+# Trace any candidate with explicit fault IDs; retain the old defaults.
 replay:
-	python3 replay.py
+	python3 replay.py "$(CANDIDATE)" --fids $(FIDS)
 
 # Check the MicroGP files and compiler without calling Z01X.
 smoke:

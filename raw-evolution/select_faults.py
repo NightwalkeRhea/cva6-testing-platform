@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Legacy utility for sampled experiments; the evaluator no longer uses it."""
+"""Parse Z01X port faults and retain the old utility for sampled experiments."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ REPORT = config.RUNDIR / "saf/raw-hazard/fsim_out.rpt"
 #   < 1> ND 0 {PORT "...fwd_i.issue_pointer[0]"}
 # We keep its old status, stuck value, and full path.
 FAULT = re.compile(
-    r'^\s*<\s*\d+>\s+(?P<status>[A-Z0-9]+)\s+'
+    r'^\s*(?:<\s*\d+>\s+)?(?P<status>[A-Z0-9]+)\s+'
     r'(?P<stuck>[01])\s+\{PORT\s+"(?P<path>[^"]+)"\}'
 )
 
@@ -54,7 +54,7 @@ def read_faults(report: Path) -> list[Fault]:
 
     for line in report.read_text(errors="replace").splitlines():
         # Ignore the report header until the list begins.
-        if line.startswith("FaultList"):
+        if re.match(r"^\s*FaultList\s*\{", line):
             in_list = True
             continue
 
@@ -65,7 +65,10 @@ def read_faults(report: Path) -> list[Fault]:
         if not in_list:
             continue
 
-        # Ignore summary lines and any line that is not a port fault.
+        if not line.strip() or line.lstrip().startswith(("#", "//")):
+            continue
+
+        # Do not silently shift IDs when another fault class appears.
         match = FAULT.match(line)
         if match:
             # Z01X uses one-based IDs. The report keeps the same order.
@@ -77,6 +80,8 @@ def read_faults(report: Path) -> list[Fault]:
                     path=match.group("path"),
                 )
             )
+        else:
+            raise ValueError(f"unsupported fault entry in {report}: {line.strip()}")
 
     if not faults:
         # An empty list usually means the wrong report was given.

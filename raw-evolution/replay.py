@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Replay the seed and two missed RAW faults, then compare their traces."""
+"""Replay any candidate with chosen faults and compare its monitor traces."""
+import argparse
 import csv
 import json
+import re
+import shutil
 import tempfile
 from collections import Counter
 from pathlib import Path
 
 import config
 import evaluate
+from select_faults import read_faults
 
 
 def require_fault_injection(work: Path) -> None:
@@ -61,64 +65,72 @@ def compare(clean: Path, faulty: Path) -> dict:
             "changed_fields": dict(changed), "first_changes": examples}
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", nargs="?", type=Path, default=evaluate.HERE / "seed.S")
+    parser.add_argument("--fids", nargs="+", type=int, default=[645, 648], metavar="FID")
+    args = parser.parse_args(argv)
     evaluate.check()
-    # Freeze the targets to the two missed pointer faults already reviewed.
-    selected = {}
-    for line in config.SFF.read_text(errors="replace").splitlines():
-        match = evaluate.SFF_FAULT.match(line)
-        if match:
-            fid = len(selected) + 1
-            selected[fid] = {"fid": str(fid), **match.groupdict()}
-    for fid in (645, 648):
-        row = selected.get(fid)
-        if row is None or "fwd_i.issue_pointer[" not in row["path"]:
-            raise RuntimeError(f"FID {fid} must be an issue_pointer fault in the current SFF")
+    evaluate.require(args.source, "candidate assembly")
+    selected = {fault.fid: fault for fault in read_faults(config.SFF)}
+    if len(args.fids) != len(set(args.fids)):
+        parser.error("--fids must not contain duplicate IDs")
+    for fid in args.fids:
+        fault = selected.get(fid)
+        if fault is None or fault.status.startswith("U"):
+            parser.error(f"FID {fid} is missing or classified as untestable in the current SFF")
 
     evaluate.RUNS.mkdir(exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="monitor-replay-", dir=evaluate.RUNS))
     print(f"Replay directory: {root}", flush=True)
     # Keep the inputs alongside the evidence so later edits cannot obscure them.
-    import shutil
-    for name in ("seed.S", "harness.c", "config.py"):
+    source = root / "source.S"
+    shutil.copy2(args.source, source)
+    for name in ("harness.c", "config.py"):
         shutil.copy2(evaluate.HERE / name, root / name)
     shutil.copy2(config.SFF, root / "faults.sff")
-    binary = evaluate.compile_program(root / "seed.S", root)
+    binary = evaluate.compile_program(source, root)
     pc = evaluate.raw_body_address(binary)
     clean = root / "clean"
     clean.mkdir()
-    command = [str(config.SIMV), "+permissive", "+dramsim",
-               f"+dramsim_ini_dir={config.DRAMSIM_INI}",
-               f"+max-cycles={config.MAX_CYCLES}", f"+ntb_random_seed={config.SEED}",
-               f"+loadmem={binary}", f"+raw_body_pc={pc:016x}",
-               "+disable_instr_trace", f"+dependency_trace_file={clean / 'dependency.csv'}",
-               f"+raw_checker_trace_file={clean / 'raw-checker.csv'}",
-               "+verbose", "+permissive-off", str(binary)]
-    print("Running clean seed", flush=True)
+    sim_args = evaluate.simulation_args(binary, pc, config.PROBE_MAX_CYCLES)
+    at = sim_args.index("+permissive-off")
+    sim_args[at:at] = [f"+dependency_trace_file={clean / 'dependency.csv'}",
+                       f"+raw_checker_trace_file={clean / 'raw-checker.csv'}"]
+    command = [str(config.SIMV), *sim_args]
+    print(f"Running clean candidate {args.source}", flush=True)
     evaluate.run(command, clean, clean / "sim.log")
     text = (clean / "sim.log").read_text(errors="replace")
-    if "*** PASSED ***" not in text or text.count("CVA6 RAW: injecting faults") != 1:
+    passed = re.search(r"\*\*\* PASSED \*\*\* Completed after\s+(\d+) simulation cycles", text)
+    if not passed or text.count("CVA6 RAW: injecting faults") != 1:
         raise RuntimeError(f"clean run did not pass with one trigger; see {clean / 'sim.log'}")
+    max_cycles = min(config.MAX_CYCLES, max(config.CYCLE_FLOOR,
+                                         int(int(passed.group(1)) * config.CYCLE_FACTOR)))
 
-    summary = {"source": str(root / "seed.S"), "raw_body_pc": f"0x{pc:016x}",
+    summary = {"source": str(source), "original_source": str(args.source.resolve()),
+               "raw_body_pc": f"0x{pc:016x}", "max_cycles": max_cycles,
                "faults": {}}
-    for fid in (645, 648):
+    for fid in args.fids:
         work = root / f"fid-{fid}"
         work.mkdir()
         print(f"Copying database and replaying FID {fid}", flush=True)
         evaluate.copy_campaign(work)
         evaluate.write_tcl(work / "fsim.tcl", binary, [fid], work / "summary.rpt", pc,
-                           trace_dir=work)
+                           trace_dir=work, max_cycles=max_cycles)
         evaluate.run_fcm(work, work / "fsim.tcl", work / "fcm.log")
         require_fault_injection(work)
         report = (work / "summary.rpt").read_text()
         if "Illegal File I/O" in report:
             raise RuntimeError(f"monitor output caused IF; inspect {work}; no comparison accepted")
-        summary["faults"][str(fid)] = {"target": selected[fid], "traces": {
+        target = selected[fid]
+        summary["faults"][str(fid)] = {"target": {
+            "fid": fid, "initial_status": target.status,
+            "stuck_at": target.stuck_at, "path": target.path}, "traces": {
             name: compare(clean / name, work / name)
             for name in ("dependency.csv", "raw-checker.csv")}}
         # Save partial progress too, in case the next replay fails.
         (root / "comparison.json").write_text(json.dumps(summary, indent=2) + "\n")
+        evaluate.remove_run_data(work)
     print(f"Done. Share {root / 'comparison.json'}", flush=True)
 
 
