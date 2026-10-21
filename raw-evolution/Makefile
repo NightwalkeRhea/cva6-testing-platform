@@ -2,23 +2,18 @@
 SHELL := /usr/bin/env bash
 
 # These names are commands, not files to create.
-.PHONY: help select check prepare campaign validate seed smoke evolve replay
+.PHONY: help check prepare campaign validate seed smoke evolve replay
 
 # Show the short path through this flow.
 help:
 	@printf '%s\n' \
-	  'make select  Choose the 500 faults from the saved report' \
 	  'make check   Check tools and campaign files' \
 	  'make prepare Compile the seed and write Tcl without running it' \
 	  'make campaign Compile one pristine fault database' \
 	  'make validate Run four faults before a long campaign' \
 	  'make seed    Score the program placed in generation zero' \
 	  'make smoke   Generate and compile two programs without faults' \
-	  'make evolve  Evolve programs on the fixed 500 faults'
-
-# Choose a stable set of 500 faults from the saved report.
-select:
-	python3 select_faults.py
+	  'make evolve  Evolve programs on the complete fault campaign'
 
 # Confirm that all files and Synopsys tools are available.
 check:
@@ -28,7 +23,7 @@ check:
 prepare:
 	python3 evaluate.py --prepare seed.S
 
-# Check campaign compilation. Each candidate builds its own database.
+# Compile once and verify that the base has no simulation results.
 campaign:
 	python3 evaluate.py --campaign
 

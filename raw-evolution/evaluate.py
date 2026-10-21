@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Compile and score RAW programs against the selected faults."""
+"""Compile and score RAW programs against the complete fault campaign."""
 from __future__ import annotations
 
 import argparse
-import csv
+import fcntl
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import config
@@ -30,7 +31,10 @@ TOTAL = re.compile(r"^# Number of Faults:\s+(\d+)", re.MULTILINE)
 TESTABLE = re.compile(r"^# Testable Faults:\s+(\d+)", re.MULTILINE)
 NOT_ATTEMPTED = re.compile(r"^#\s+Not Attempted\s+NA\s+(\d+)", re.MULTILINE)
 # Read the status of each port fault from the current SFF.
-SFF_FAULT = re.compile(r'^\s*(?P<status>[A-Z0-9]+)\s+[01]\s+\{PORT\s+"')
+SFF_FAULT = re.compile(
+    r'^\s*(?P<status>[A-Z0-9]+)\s+(?P<stuck_at>[01])\s+'
+    r'\{PORT\s+"(?P<path>[^"]+)"'
+)
 # This line proves that the strobe reached raw_body and injected faults.
 INJECTION_MARKER = "Info : Injecting "
 
@@ -39,13 +43,17 @@ INJECTION_MARKER = "Info : Injecting "
 TOOL_RELEASE = re.compile(r"(?:VCS|Z01X)_([^/]+)")
 
 
+class InvalidProgram(RuntimeError):
+    """The assembler rejected the candidate, rather than the tool setup."""
+
+
 def require(path: Path, label: str) -> None:
     """Fail early when one required file is missing."""
     if not path.exists():
         raise FileNotFoundError(f"{label} not found: {path}")
 
 
-def check(require_faults: bool = True) -> None:
+def check() -> None:
     """Check every file and tool before a long run."""
     # These files come from the platform and its Z01X build.
     required = [
@@ -57,23 +65,19 @@ def check(require_faults: bool = True) -> None:
         (config.LINKER, "linker script"),
     ]
 
-    # The first campaign is built before the seed selects its 500 faults.
-    if require_faults:
-        required.append((HERE / "faults.csv", "selected faults"))
-
     for path, label in required:
         require(path, label)
+
+    # Use the exported list, not gen_*.sff, which asks FCC to generate faults.
+    text = config.SFF.read_text(errors="replace")
+    if (re.search(r"(?m)^\s*FaultGenerate\b", text)
+            or not re.search(r"(?m)^\s*FaultList\s*\{", text)):
+        raise ValueError(f"expected a generated FaultList without FaultGenerate: {config.SFF}")
 
     # These commands come from the active Synopsys setup.
     for tool in ("vc_fcc", "vc_fcm"):
         if shutil.which(tool) is None:
             raise FileNotFoundError(f"tool not found on PATH: {tool}")
-
-
-def fault_ids() -> list[int]:
-    """Read the 500 fault IDs chosen by select_faults.py."""
-    with (HERE / "faults.csv").open(newline="") as stream:
-        return [int(row["fid"]) for row in csv.DictReader(stream)]
 
 
 def validation_fault_ids(count: int) -> list[int]:
@@ -98,8 +102,13 @@ def validation_fault_ids(count: int) -> list[int]:
 def run(command: list[str], cwd: Path, log: Path) -> None:
     """Run one command and save all of its output."""
     # Write to a log because Z01X can print a lot of text.
+    env = os.environ.copy()
+    if Path(command[0]).name in ("vc_fcc", "vc_fcm"):
+        # A shell's connection settings must not redirect a private campaign.
+        env = {key: value for key, value in env.items() if not key.startswith("SNPS_FDB_")}
     with log.open("w") as stream:
-        result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT)
+        result = subprocess.run(command, cwd=cwd, env=env,
+                                stdout=stream, stderr=subprocess.STDOUT)
     # Never turn a tool failure into a low fitness score.
     if result.returncode:
         raise RuntimeError(f"command failed with {result.returncode}; see {log}")
@@ -187,8 +196,9 @@ def evaluation_digest(
     # A sampled run also depends on the exact selected fault IDs.
     if not full:
         digest.update(b"faults")
-        ids = selected_ids if selected_ids is not None else fault_ids()
-        digest.update(json.dumps(ids).encode())
+        if not selected_ids:
+            raise ValueError("a partial run requires explicit fault IDs")
+        digest.update(json.dumps(selected_ids).encode())
 
     # This includes simv, its data directory, the SFF, and compiler options.
     fingerprint = json.dumps(campaign_fingerprint(), sort_keys=True).encode()
@@ -199,10 +209,13 @@ def evaluation_digest(
 
 def build_campaign() -> Path:
     """Run the fault compiler once and keep its untouched database."""
-    check(require_faults=False)
+    check()
 
     # Reuse a complete database when it still matches the simulator.
     if campaign_is_ready():
+        with (CAMPAIGN_BASE / "copy.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            verify_unused_database(CAMPAIGN_BASE)
         print(f"campaign is already ready: {CAMPAIGN_BASE}")
         return CAMPAIGN_BASE
 
@@ -227,50 +240,86 @@ def build_campaign() -> Path:
     )
     require(CAMPAIGN_BASE / "fdb", "compiled fault database")
 
+    verify_unused_database(CAMPAIGN_BASE)
+
     # Write this marker only after vc_fcc finishes successfully.
     CAMPAIGN_INFO.write_text(json.dumps(campaign_fingerprint(), indent=2) + "\n")
     print(f"campaign prepared: {CAMPAIGN_BASE}")
     return CAMPAIGN_BASE
 
 
+def stop_database(work: Path) -> None:
+    """Stop only this database, and refuse to copy or delete it while live."""
+    database = (work / "fdb").resolve()
+    pid = database / "postmaster.pid"
+    if not pid.exists():
+        return
+    command = f"fcm::stop_server -fdb_storage_path {{{database}}}"
+    run(["vc_fcm", "-fdb_mgmt_only", "-disable_auto_setup", "-tcl",
+         f"if {{[catch {{{command}}} message]}} {{puts stderr $message; exit 1}}"],
+        work, work / "stop-fdb.log")
+    if pid.exists():
+        raise RuntimeError(f"FDB server still has a PID file: {pid}; preserving database")
+
+
+def run_fcm(work: Path, script: Path, log: Path) -> None:
+    """Open this run's database explicitly and close its server afterwards."""
+    try:
+        run(["vc_fcm", "-fdb_path", str((work / "fdb").resolve()),
+             "-fdb_project", "default", "-campaign", config.CAMPAIGN,
+             "-connect", "-stop_server_on_exit", "-tcl_script", str(script)],
+            work, log)
+    finally:
+        # The exit flag only stops servers that this FCM process started.
+        stop_database(work)
+
+
+def verify_unused_database(work: Path) -> None:
+    """Require all testable faults to be NA, then leave the database stopped."""
+    report = work / "unrun-summary.rpt"
+    report.unlink(missing_ok=True)
+    script = work / "check-unrun.tcl"
+    script.write_text(
+        f"report -campaign {config.CAMPAIGN} -summaryonly "
+        f"-report {{{report}}} -overwrite\n"
+    )
+    run_fcm(work, script, work / "check-unrun.log")
+    text = report.read_text(errors="replace")
+    testable = TESTABLE.search(text)
+    unattempted = NOT_ATTEMPTED.search(text)
+    if (not testable or not unattempted or int(testable.group(1)) == 0
+            or int(testable.group(1)) != int(unattempted.group(1))):
+        raise RuntimeError(f"database contains results or lacks NA counts: {report}; preserving it")
+
+
 def remove_run_data(work: Path) -> None:
     """Remove database files from an earlier or completed attempt."""
-    # The database server may remove postmaster.pid while rmtree scans it.
-    # Treat an already missing file as cleaned, but keep every other error.
-    def ignore_missing_file(_function, _path, error) -> None:
-        problem = error[1]
-        if isinstance(problem, FileNotFoundError):
-            return
-        raise problem
-
-    # These names are generated by Z01X inside one candidate directory.
-    # Keep FDB intact: vc_fcm can leave its PostgreSQL server running.
-    # Deleting or copying that directory while it is live is unsafe.
-    for name in ("fcm.dir", "fcm_tsim_fsdb"):
+    stop_database(work)
+    # Only remove database files after its server has stopped.
+    for name in ("fdb", "fcm.dir", "fcm_tsim_fsdb"):
         path = work / name
         if path.is_dir():
-            shutil.rmtree(path, onerror=ignore_missing_file)
+            shutil.rmtree(path)
 
 
-def compile_campaign(work: Path) -> None:
-    """Compile fresh results for this candidate instead of copying a live FDB."""
+def copy_campaign(work: Path) -> None:
+    """Copy a stopped, unused database and verify the copy before simulation."""
     if not campaign_is_ready():
         raise RuntimeError("campaign is not ready; run make campaign first")
 
     if (work / "fdb").exists():
         raise RuntimeError(f"database already exists in {work}; preserve this run before retrying")
 
-    # The SFF defines the same faults, but no previous candidate's results.
-    run(
-        [
-            "vc_fcc", "-full64", "-daidir", str(config.DAIDIR),
-            "-sff", str(config.SFF), "-campaign", config.CAMPAIGN,
-            *FCC_OPTIONS, "-overwrite",
-        ],
-        work,
-        work / "fcc.log",
-    )
-    require(work / "fdb", "compiled fault database")
+    # Replay and evolution can share the base; never open it during a copy.
+    with (CAMPAIGN_BASE / "copy.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        verify_unused_database(CAMPAIGN_BASE)
+        source = CAMPAIGN_BASE / "fdb"
+        if any(path.is_symlink() for path in source.rglob("*")):
+            raise RuntimeError(f"database contains symlinks: {source}; refusing raw copy")
+        run(["cp", "-a", "--reflink=auto", str(source), str(work / "fdb")],
+            work, work / "copy-fdb.log")
+    verify_unused_database(work)
 
 
 def compile_program(source: Path, work: Path) -> Path:
@@ -288,7 +337,14 @@ def compile_program(source: Path, work: Path) -> Path:
         "-x", "assembler-with-cpp", str(source.resolve()), "-x", "none",
         "-o", str(binary),
     ]
-    run(command, work, work / "compile.log")
+    log = work / "compile.log"
+    try:
+        run(command, work, log)
+    except RuntimeError as error:
+        text = log.read_text(errors="replace")
+        if "Assembler messages:" in text and re.search(r"\bError:", text):
+            raise InvalidProgram(f"assembly rejected; see {log}") from error
+        raise
     return binary
 
 
@@ -316,6 +372,32 @@ def raw_body_address(binary: Path) -> int:
     return matches[0]
 
 
+def simulation_args(binary: Path, raw_body_pc: int, max_cycles: int) -> list[str]:
+    return [
+        "+permissive", "+dramsim",
+        f"+dramsim_ini_dir={config.DRAMSIM_INI}",
+        f"+max-cycles={max_cycles}", f"+ntb_random_seed={config.SEED}",
+        f"+loadmem={binary}", f"+raw_body_pc={raw_body_pc:016x}",
+        "+disable_instr_trace", "+verbose", "+permissive-off", str(binary),
+    ]
+
+
+def probe(binary: Path, work: Path) -> int | None:
+    """Run without faults; return cycles, or None for a failed program."""
+    log = work / "probe.log"
+    command = [str(config.SIMV), *simulation_args(
+        binary, raw_body_address(binary), config.PROBE_MAX_CYCLES)]
+    with log.open("w") as stream:
+        result = subprocess.run(command, cwd=work, stdout=stream, stderr=subprocess.STDOUT)
+    text = log.read_text(errors="replace")
+    if "*** FAILED ***" in text:
+        return None
+    passed = re.search(r"\*\*\* PASSED \*\*\* Completed after\s+(\d+) simulation cycles", text)
+    if result.returncode or not passed:
+        raise RuntimeError(f"probe did not produce a valid result; see {log}")
+    return int(passed.group(1))
+
+
 def write_tcl(
     path: Path,
     binary: Path,
@@ -323,6 +405,7 @@ def write_tcl(
     report: Path,
     raw_body_pc: int,
     trace_dir: Path | None = None,
+    max_cycles: int | None = None,
 ) -> None:
     """Write the small Tcl script that runs one candidate."""
     # Refuse a stale or hand-written address before simulation starts.
@@ -336,24 +419,8 @@ def write_tcl(
     # Keep every fault result for later comparisons and monitor replays.
     fault_report = report.with_name("faults.rpt")
 
-    # Pass the same fixed seed and cycle limit to every program.
-    args = " ".join(
-        (
-            "+permissive",
-            "+dramsim",
-            f"+dramsim_ini_dir={config.DRAMSIM_INI}",
-            f"+max-cycles={config.MAX_CYCLES}",
-            f"+ntb_random_seed={config.SEED}",
-            f"+loadmem={binary}",
-            f"+raw_body_pc={raw_body_pc:016x}",
-            # Z01X rejects the built-in tracer's $fwrite after injection.
-            # Optional monitor traces use separate plusargs when needed.
-            "+disable_instr_trace",
-            "+verbose",
-            "+permissive-off",
-            str(binary),
-        )
-    )
+    args = " ".join(simulation_args(
+        binary, raw_body_pc, config.MAX_CYCLES if max_cycles is None else max_cycles))
 
     # Replay one fault at a time; ordinary fitness runs leave tracing off.
     if trace_dir is not None:
@@ -458,7 +525,7 @@ def parse_full_coverage(report: Path) -> float:
 
 def prepare(
     source: Path,
-    full: bool = False,
+    full: bool = True,
     digest: str | None = None,
     selected_ids: list[int] | None = None,
     result_group: str | None = None,
@@ -477,7 +544,7 @@ def prepare(
     binary = compile_program(source, work)
     raw_body_pc = raw_body_address(binary)
     tcl = work / "fsim.tcl"
-    ids = None if full else (selected_ids if selected_ids is not None else fault_ids())
+    ids = None if full else selected_ids
     write_tcl(tcl, binary, ids, work / "summary.rpt", raw_body_pc)
     return work, tcl
 
@@ -492,12 +559,14 @@ def compile_smoke(source: Path) -> Path:
 
 def score(
     source: Path,
-    full: bool = False,
+    full: bool = True,
     selected_ids: list[int] | None = None,
     result_group: str | None = None,
 ) -> float:
-    """Run the selected faults and return the coverage percentage."""
-    ids = None if full else (selected_ids if selected_ids is not None else fault_ids())
+    """Run the full campaign, or explicit IDs for a validation check."""
+    if full and selected_ids is not None:
+        raise ValueError("full evaluation cannot also select individual faults")
+    ids = None if full else selected_ids
 
     # Never reuse a score from another program, simulator, or fault set.
     digest = evaluation_digest(source, full, ids)
@@ -505,9 +574,18 @@ def score(
         work = RUNS / result_group / digest
     else:
         work = RUNS / "full" / digest if full else RUNS / digest
+    work.mkdir(parents=True, exist_ok=True)
+    with (work / "evaluation.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return score_locked(source, full, ids, result_group, work, digest)
+
+
+def score_locked(source, full, ids, result_group, work, digest) -> float:
     report = work / "summary.rpt"
     fault_report = work / "faults.rpt"
     marker_report = work / "injection-markers.txt"
+    if (work / "rejected.txt").exists():
+        return 0.0
 
     # Never combine evidence from different attempts or restart an old run
     # merely because the earlier version saved only its summary.
@@ -534,23 +612,32 @@ def score(
     marker_report.unlink(missing_ok=True)
 
     # Compile the new program and make its Tcl file.
-    work, tcl = prepare(
-        source,
-        full=full,
-        digest=digest,
-        selected_ids=ids,
-        result_group=result_group,
-    )
+    try:
+        work, tcl = prepare(
+            source,
+            full=full,
+            digest=digest,
+            selected_ids=ids,
+            result_group=result_group,
+        )
+    except InvalidProgram as error:
+        (work / "rejected.txt").write_text(str(error) + "\n")
+        return 0.0
 
-    # Compile from the same SFF without inheriting earlier results.
-    compile_campaign(work)
+    binary = work / "candidate.riscv"
+    cycles = probe(binary, work)
+    if cycles is None:
+        (work / "rejected.txt").write_text("fault-free program failed; see probe.log\n")
+        return 0.0
+    max_cycles = min(config.MAX_CYCLES, max(config.CYCLE_FLOOR,
+                                         int(cycles * config.CYCLE_FACTOR)))
+    write_tcl(tcl, binary, ids, report, raw_body_address(binary), max_cycles=max_cycles)
+
+    # Copy the same stopped database without inheriting earlier results.
+    copy_campaign(work)
 
     # Connect to the campaign and simulate only the chosen faults.
-    run(
-        ["vc_fcm", "-tcl_script", str(tcl), "-campaign", config.CAMPAIGN, "-connect"],
-        work,
-        work / "fcm.log",
-    )
+    run_fcm(work, tcl, work / "fcm.log")
 
     # A valid report is not enough if the commit trigger never fired.
     require_injection_marker(work)
@@ -573,7 +660,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--campaign", action="store_true")
     parser.add_argument("--smoke", action="store_true")
-    parser.add_argument("--full", action="store_true")
+    parser.add_argument("--full", action="store_true",
+                        help="evaluate the complete campaign (already the default)")
     parser.add_argument("--validate-faults", type=int, metavar="N")
     parser.add_argument("--compile", type=Path, metavar="SOURCE")
     parser.add_argument("--prepare", type=Path, metavar="SOURCE")
@@ -585,7 +673,7 @@ def main() -> int:
         check()
         print("RAW evaluator is ready")
         return 0
-    # Run the fault compiler once for all later candidates.
+    # Compile or verify the stopped database used for later copies.
     if args.campaign:
         build_campaign()
         return 0
@@ -627,17 +715,19 @@ def main() -> int:
         validation_ids = validation_fault_ids(args.validate_faults)
         result_group = "validate"
 
-    # Score every program in the order MicroGP supplied them.
-    values: list[float] = []
-    for source in args.sources:
+    def evaluate_source(source):
         value = score(
             source,
-            full=args.full,
+            full=validation_ids is None,
             selected_ids=validation_ids,
             result_group=result_group,
         )
-        values.append(value)
-        print(f"{source}: {value:.2f}%")
+        print(f"{source}: {value:.2f}%", flush=True)
+        return value
+
+    # map keeps scores in the order MicroGP supplied the programs.
+    with ThreadPoolExecutor(max_workers=config.EVALUATIONS) as pool:
+        values = list(pool.map(evaluate_source, args.sources))
 
     # MicroGP tells us where to place the fitness values.
     # Use a local file when the variable is absent.

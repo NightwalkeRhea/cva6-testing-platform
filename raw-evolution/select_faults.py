@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Choose a stable set of faults from a Z01X report."""
+"""Legacy utility for sampled experiments; the evaluator no longer uses it."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import config
+
+# Preserve the old selection utility without configuring the active evaluator.
+QUOTAS = {"ND": 400, "DD": 100}
+FOCUS = ("i_issue_read_operands", "i_scoreboard")
+REPORT = config.RUNDIR / "saf/raw-hazard/fsim_out.rpt"
 
 # One line in the report looks like this:
 #   < 1> ND 0 {PORT "...fwd_i.issue_pointer[0]"}
@@ -116,14 +121,14 @@ def pick_balanced(faults: list[Fault], count: int, rng: random.Random) -> list[F
 def select(faults: list[Fault]) -> list[Fault]:
     """Apply the block filter and every status quota."""
     # Keep only the scoreboard and the block that reads operands.
-    focused = [fault for fault in faults if any(name in fault.path for name in config.FOCUS)]
+    focused = [fault for fault in faults if any(name in fault.path for name in FOCUS)]
 
     # The fixed seed makes repeated selection produce the same CSV file.
     rng = random.Random(config.SEED)
     chosen: list[Fault] = []
 
     # Fill each quota independently so one large class cannot dominate.
-    for status, count in config.QUOTAS.items():
+    for status, count in QUOTAS.items():
         pool = [fault for fault in focused if fault.status == status]
         chosen.extend(pick_balanced(pool, count, rng))
 
@@ -141,9 +146,9 @@ def write_csv(path: Path, faults: list[Fault]) -> None:
 
 
 def main() -> int:
-    # With no arguments, use the report and output from config.py.
+    # Retain the original defaults for old sampled experiments.
     parser = argparse.ArgumentParser()
-    parser.add_argument("report", nargs="?", type=Path, default=config.REPORT)
+    parser.add_argument("report", nargs="?", type=Path, default=REPORT)
     parser.add_argument("-o", "--output", type=Path, default=Path(__file__).with_name("faults.csv"))
     args = parser.parse_args()
 
@@ -155,7 +160,7 @@ def main() -> int:
     totals: dict[str, int] = defaultdict(int)
     for fault in chosen:
         totals[fault.status] += 1
-    summary = ", ".join(f"{name}={totals[name]}" for name in config.QUOTAS)
+    summary = ", ".join(f"{name}={totals[name]}" for name in QUOTAS)
     print(f"wrote {len(chosen)} faults to {args.output} ({summary})")
     return 0
 

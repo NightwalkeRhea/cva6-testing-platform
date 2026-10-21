@@ -20,12 +20,8 @@ BUILD = (
 # We reuse the simulator from the completed RTL campaign
 RUNDIR = BUILD / "fsim-rtl-rundir"
 
-# The completed campaign supplies both the fault list and the old results.
-# sff file will setup and define the "fault universe" so that Z01X can inject
+# Evaluate the complete list in this SFF, without sampling faults.
 SFF = RUNDIR / "saf_chiptop0.sff"
-
-#record the old result for every fault, and the selector will read this report when it creates fault.csv
-REPORT = RUNDIR / "saf/raw-hazard/fsim_out.rpt"
 
 # SIMV runs the candidate program with injected faults
 SIMV = RUNDIR / "simv"
@@ -48,18 +44,15 @@ DRAMSIM_INI = TESTYARD / "generators/testchipip/src/main/resources/dramsim2_ini"
 # Keep every random choice repeatable.
 SEED = 946094937
 
-# Z01X may run this many jobs during one evaluation.
-WORKERS = 16
+# Run 16 candidates at once, each with one Z01X worker.
+EVALUATIONS = 16
+WORKERS = 1
 
 # Stop a broken candidate that never exits.
 MAX_CYCLES = 10_000_000
+PROBE_MAX_CYCLES = 1_000_000
+CYCLE_FACTOR = 1.5
+CYCLE_FLOOR = 60_000
 
 # The existing fault database uses this campaign name.
 CAMPAIGN = "chiptop0"
-
-# Use faults missed by the seed, plus detections we want to retain.
-# These labels come from the full seed run with AXI observation.
-QUOTAS = {"ND": 400, "DD": 100}
-
-# Ignore faults outside the two blocks that handle RAW behavior.
-FOCUS = ("i_issue_read_operands", "i_scoreboard")

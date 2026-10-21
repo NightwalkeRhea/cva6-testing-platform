@@ -26,7 +26,7 @@ def small_population(destination: Path) -> None:
 
     # Keep enough individuals for the tournament selector.
     text = replace_once(text, '<mu value="8" />', '<mu value="2" />')
-    text = replace_once(text, '<lambda value="8" />', '<lambda value="1" />')
+    text = replace_once(text, '<lambda value="16" />', '<lambda value="1" />')
 
     # Three compilations are enough to exercise generation and mutation.
     text = replace_once(

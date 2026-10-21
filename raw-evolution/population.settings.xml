@@ -5,8 +5,8 @@
   <mu value="8" />
   <!-- Start with one exact copy of seed.S. -->
   <nu value="1" />
-  <!-- Create eight children from that seed. -->
-  <lambda value="8" />
+  <!-- Create enough children to use all 16 cores. -->
+  <lambda value="16" />
   <!-- Stop when five generations pass without a better score. -->
   <maximumSteadyStateGenerations value="5" />
   <!-- Never run more than twenty generations. -->
@@ -35,8 +35,8 @@
 
   <!-- Tell MicroGP how to call our Python evaluator. -->
   <evaluation>
-    <!-- Run one expensive Z01X job at a time. -->
-    <concurrentEvaluations value="1" />
+    <!-- Pass up to 16 programs to the evaluator together. -->
+    <concurrentEvaluations value="16" />
     <!-- Keep generated files while we inspect the first run. -->
     <removeTempFiles value="false" />
     <!-- Pass each generated assembly file to evaluate.py. -->
