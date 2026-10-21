@@ -1,248 +1,139 @@
 # RAW evolution
 
-Some small RISC-V programs to stress how cva6 handles RAW hazards. (MicroGP changes the programs, Z01X runs the faults and returns their coverage)
-
-As for the simulation, the cva6 is built once (because it's slow) and then, every candidate reuses the same simulator, the same fault list, and the clean fault database.
-
-## What the experiment measures
-
-The faults are inside the scoreboard and the block that reads operands.
-
-`raw_body` is the assembly function that we evolve. The C harness calls it 256
-times, with inputs from 0 through 255, and combines its return values into one
-signature. MicroGP changes the instructions inside this function. (so the boot
-code, the C harness, and the code that prints the signature stay the same.)
-
-Injection starts when the first instruction in `raw_body` retires. The evaluator
-reads the 64-bit address of `raw_body` from each binary. The strobe checks both
-commit ports and rejects a run if injection never starts.
-
-The strobe observes the ports of `CVA6CoreBlackbox`. In practice, the useful
-output is its AXI traffic. A fault counts as detected only when it changes the
-value or timing of that traffic.
-
-Running all 37,184 faults for every candidate would make the search too slow.
-We therefore run the seed against all faults once, then `select_faults.py`
-chooses a smaller set of 500 from that report. It chooses 250 faults that the
-seed did not detect (ND), 100 that it did not control (NC), 50 that it did not
-observe (NO), and 100 that it detected (DD). For now, we're using a fixed random seed to keep the list unchanged for every candidate.
-
-Fitness is the percentage of the fixed 500 faults that Z01X detects. Every
-candidate gets a fresh database compiled from the same SFF, so it cannot reuse
-results from another candidate. Databases remain in each run directory because
-Z01X may keep their servers running after simulation. This uses more disk space
-and adds fault compilation to each evaluation.
-
-Fault runs disable CVA6's ordinary instruction trace. Z01X treats its `$fwrite`
-calls as illegal after injection. Optional monitor traces are independent and
-remain disabled unless a separate replay requests them explicitly.
-
-### Small numerical example
-
-Suppose `raw_body` starts at `0x10200`. Its first instruction retires on commit
-port 1 at cycle 12,340, so injection starts at that cycle. One injected fault
-changes a bit inside the scoreboard at cycle 12,350.
-
-- If the AXI traffic stays unchanged, Z01X does not count the fault as detected.
-- If the normal run writes `0x25` at cycle 12,400, but the faulty run writes
-  `0x24`, Z01X counts the fault as detected.
-- Z01X also counts it if both runs write `0x25`, but the faulty run writes it at
-  cycle 12,401. We treat a change in timing as visible behavior.
-
-If Z01X detects 96 of the fixed 500 faults, the fitness is
-`96 / 500 * 100 = 19.2%`. A candidate that detects 101 faults gets `20.2%`.
-The addresses, cycles, and values above are only an example.
-
-## Folder Contenr
-
-- `seed.S` is the hand-written starting program.
-- `genome.xml` describes the RAW patterns that MicroGP can add or change.
-- `evaluate.py` compiles a program and runs its faults.
-- `select_faults.py` chooses the fixed set of 500 faults.
-- `config.py` keeps the paths, quotas, seed, and limits in one place.
-
-The genome contains the complete `seed.S` as its fixed base. Generation zero is
-therefore the exact seed, with no random instructions added before evaluation.
-
-## Before you start
-
-Run this flow on the CAD server. You need:
-
-- a working `testyard/env.sh` in this checkout;
-- access to VCS and Z01X;
-- access to the Nangate45 files used by Testyard;
-- CMake and a C++ compiler.
-
-For a fresh clone, first follow **Set up Testyard** in the main README. If you've done it, you can proceed with the rest of te commands below =)
-
-## Build MicroGP once
-
-Do this before activating the EDA tools. Some EDA libraries can break the
-system copy of CMake.
-
-```bash
-cd "$HOME/cva6-testing-platform"
-
-cmake \
-  -S microgp/src -B microgp/build -D CMAKE_BUILD_TYPE=RELEASE \
-  -D CMAKE_POLICY_VERSION_MINIMUM=3.5
-
-cmake --build microgp/build --target ugp3 --parallel 16
-
-export PATH="$PWD/microgp/build/Frontends/ugp3:$PATH"
-command -v ugp3
-ugp3 --version
-```
-Run that `export` once in each new shell. If you prefer, add the same line to
-`~/.bashrc` with the absolute path of your clone. Do not add it more than once.
-The last two commands must find and run `ugp3`.
-
-## Enter the working environment
-
-Run these commands in every new shell or tmux session:
-
-```bash
-cd "$HOME/cva6-testing-platform"
-
-source testyard/env.sh
-deactivate_proxies
-activate_eda_tools
-
-export RISCV="$PWD/testyard/.conda-env/riscv-tools"
-export PATH="$RISCV/bin:$PATH"
-hash -r
-
-command -v riscv64-unknown-elf-gcc
-command -v vc_fcc
-command -v vc_fcm
-command -v ugp3
-```
-
-If MicroGP is not in `~/.bashrc`, first run its single `export` from the build
-section above. Of course, don't continue if one of those four checks prints
-nothing.
-
-## Check the existing CVA6 build
-
-The candidate loop expects a fault-aware simulator and its SFF file:
-
-```bash
-cd "$HOME/cva6-testing-platform/raw-evolution"
-
-python3 evaluate.py --compile seed.S
-make check
-```
-
-`make check` will print `RAW evaluator is ready` when the required files and tools
-are present.
-
-### Troubleshooting
-
-If it reports that `simv`, `simv.daidir`, or `saf_chiptop0.sff` is
-missing, build the CVA6 fault simulator before continuing. That build is slow,
-but it only needs to happen when the RTL, strobe, or fault setup changes.
-
-## Prepare and validate the campaign
-
-Use tmux for this part. The fault compiler is going to take a while...
-
-```bash
-cd "$HOME/cva6-testing-platform/raw-evolution"
-set -o pipefail
-
-make prepare
-make campaign 2>&1 | tee "$HOME/raw-axi-campaign.log"
-echo "Campaign status: ${PIPESTATUS[0]}"
-python3 -c 'import evaluate; print("Campaign ready:", evaluate.campaign_is_ready())'
-```
-
-Stop if the status is not zero or the final line says `False`.
-
-Now test only four faults:
-
-```bash
-make validate 2>&1 | tee "$HOME/raw-axi-validate.log"
-echo "Validation status: ${PIPESTATUS[0]}"
-```
-
-The run above must finish with status zero. Its run directory must also contain
-`injection-markers.txt`. Each line records Z01X's confirmation and the simulation
-time when it injected the faults.
-
-## Create the baseline before selecting 500 faults
-
-First run the seed on the complete set of 37,184 faults:
-
-```bash
-cd "$HOME/cva6-testing-platform/raw-evolution"
-set -o pipefail
-
-python3 evaluate.py --full seed.S 2>&1 | tee "$HOME/raw-axi-seed-full.log"
-echo "Full seed status: ${PIPESTATUS[0]}"
-```
-
-This will create a summary and a detailed report under `runs/full/`. Keep both.
-Choose the fixed 500 faults from this detailed report. Its labels describe how
-the seed behaves with the current injection point and AXI observation.
-
-Select 400 faults the seed missed (ND) and 100 it detected (DD). The selector
-spreads them across signal families and stuck values using the fixed random seed.
-Pass the exact report from your baseline, rather than the first report found
-under `runs/full/`:
-
-```bash
-python3 select_faults.py runs/full/<your-run>/faults.rpt
-wc -l faults.csv
-```
-
-The selector creates `raw-evolution/faults.csv`. Keep this file unchanged throughout the
-evolution so every candidate runs against the same faults.
-
-The baseline completed on 19 October 2026 is on cattivo at
-`raw-evolution/runs/full/d83a55ef50a29e94/`. It detected 6,967 of 37,184 faults
-with AXI observation: 22,957 ND, 5 PD, and 7,255 untestable. Preserve its
-`summary.rpt`, `faults.rpt`, and `injection-markers.txt` before further work.
-
-## Replay missed faults with the monitors
-
-After the seed scores 20% on the fixed 500 faults, run `make replay` in tmux.
-It runs the clean seed and then faults 645 and 648 separately in serial mode.
-These faults affect `fwd_i.issue_pointer` and must be ND in `faults.csv`.
-
-The command prints a new directory under `runs/monitor-replay-*`. It keeps the
-inputs, logs, both monitor traces, and `comparison.json`. That comparison lists
-changed fields and the first few examples. If the event sequence diverges, it
-stops pairing rows and records the first mismatch. A trace difference explains
-internal behavior; the AXI strobe still decides fault detection.
-
-This uses real simulations and fresh databases. If Z01X rejects monitor file
-output as IF, the command stops and preserves the logs. Replay with Z01X must
-be validated on the server; compiling the script alone cannot prove it works.
-
-## Check MicroGP without running faults
-
-```bash
-cd "$HOME/cva6-testing-platform/raw-evolution"
-make smoke
-```
-
-This is the smoke test that will check generates and compile a few programs. It uses dummy scores and it also checks that generation zero still matches `seed.S` exactly.
-
-## Run the evolution
-
-After you create `faults.csv`:
-
-```bash
-cd "$HOME/cva6-testing-platform/raw-evolution"
-make seed
-make evolve
-```
-
-`make seed` gives us the score of generation zero. `make evolve` then runs the
-real search.
-
-The search evaluates one program at a time. Each evaluation can use up to 16
-workers. It stops after 20 generations, 100 unique programs, 24 hours, or five
-generations without improvement. The first limit that is reached stops the run.
-
-Results stay under `runs/`.
+MicroGP evolves RISC-V programs, and Z01X scores their fault coverage. The
+experiment asks whether information from passive monitors helps an LLM produce
+better tests or templates for that search.
+
+Follow the [main README](../README.md) to install the tools and run the experiment.
+
+## Measurement
+
+For this experiment, use the supplied RTL campaign: 37,184 uncollapsed stuck-at
+faults on ports inside `i_scoreboard` and `i_issue_read_operands`. Evaluation on
+the synthesized netlist and a completed comparison with monitor guidance remain
+work in progress.
+
+`raw_body` is the assembly function in `seed.S`. The C harness calls it 256
+times with inputs 0 through 255, XORs the returned values, and prints a signature.
+The genome includes the seed as its fixed base; MicroGP can add or alter patterns
+around that base. The smoke check verifies that generation zero matches `seed.S`.
+
+Expect injection at retirement of the first instruction of `raw_body` on
+either commit port, then throughout the remaining calls and printing. Find the
+saved confirmation from Z01X in `injection-markers.txt`.
+
+Read coverage as detection at the AXI boundary of `CVA6CoreBlackbox`, including
+changes in values or timing. A changed signature is not required. Use internal
+traces to explain behavior, while keeping AXI detection as the coverage measure.
+
+For example, if the clean run writes `0x25` at cycle 12,400, a faulty write of
+`0x24` is detected. Writing `0x25` at cycle 12,401 also counts as detection.
+
+## Fitness
+
+Evaluate every candidate against the complete campaign. No `faults.csv` is
+required. MicroGP compares two values in order:
+
+1. Coverage: `100 * DG / total faults`.
+2. Complementary detections: the number of detected IDs absent from a fixed reference.
+
+The second value only breaks ties in coverage; it cannot compensate for lower
+coverage. DG counts definite detections at the AXI boundary. Potential detections do not earn points.
+Untestable faults remain in the denominator, so 100% may be unreachable.
+
+Freeze a full report with `python3 evaluate.py --set-reference PATH/faults.rpt`
+before evolution. The reference must have a complete summary, evidence of
+injection, and the same faults in the same order as the current SFF. The saved
+reference is checked against the current campaign before scoring. Missing or
+mismatched references stop evolution rather than silently disabling the second
+objective. A standalone seed evaluation can run before a reference exists;
+its second value is then zero.
+
+Each successful full evaluation saves `detected-ids.json` alongside `faults.rpt`.
+The parser verifies the IDs against the SFF and checks their count against DG.
+Unknown entries, mismatched counts, and illegal file I/O stop evaluation. These
+saved IDs also let you change the reference between experiments without rerunning
+fault simulation. Do not resume an old MicroGP state after changing the reference
+or the meaning of fitness; start a new run.
+
+With the supplied campaign, divide DG by 37,184. The evaluator reads the total
+from each report rather than assuming that number. Use the same campaign and
+observation points throughout the comparison. `--full` remains accepted but is
+no longer needed; only the four-fault validation uses a subset.
+
+Each candidate reuses the simulator and SFF and receives a copy of the stopped
+database in `campaign-base/`. The base and its copy must have all testable faults
+marked NA before simulation. Each run opens its own database by its explicit
+path. Successful evaluations stop their server and remove the private database
+after saving reports; failed runs retain their files.
+
+Before copying the database, the evaluator runs the candidate without faults.
+A failed program or one that exceeds one million cycles receives zero fitness.
+Other simulator errors stop evaluation. Passing programs get a fault simulation
+limit of 1.5 times their measured cycles, with a floor of 60,000 and a ceiling
+of ten million. These values live in `config.py`; `probe.log` records the run.
+Reject assembly syntax errors before probing. Keep the same cycle policy for
+both searches and recheck the seed when changing it; shorter limits can change
+fault outcomes.
+
+## MicroGP settings
+
+Develop the method with monitor guidance first. Preserve the original genome
+and seed before changing them. When the method is ready, freeze it and run the
+final comparison without guidance from those original inputs. Use the same
+campaign, evaluator, settings, and budget for that comparison, and report the
+additional effort spent developing the guided method.
+
+| Setting | Value | Effect |
+| --- | --- | --- |
+| Initial population (`nu`) | 1 | Start with the exact seed |
+| Parents (`mu`) | 8 | Retain up to eight parents |
+| Offspring (`lambda`) | 16 | Generate sixteen children per generation |
+| Elite | 1 | Preserve the best program |
+| Maximum age | 3 | Limit how long ordinary individuals survive |
+| Tournament (`tau`) | 1 | No competition within the tournament; survival still selects |
+| Mutation (`sigma`) | 0.25 | Initial strength of variation |
+| Inertia | 0.9 | Controls adaptation |
+| Concurrent evaluations | 16 | Evaluate up to sixteen candidates at once |
+| Z01X workers | 1 | One worker per candidate |
+
+MicroGP passes a batch to `evaluate.py`, which runs the programs in parallel
+and writes one fitness file in the original order. Identical programs share a
+locked directory and reuse the completed result. The initial seed runs alone.
+
+Allow up to 20 generations, 100 evaluations, 24 hours, or five generations
+without improvement, whichever limit is reached first. Record actual evaluations
+and elapsed time when comparing searches; the limits may take effect only after
+an evaluation or generation finishes.
+
+Enabled operators alter parameters, insert patterns, or replace patterns. There
+is no explicit removal mutation or crossover. Keep the settings identical for
+the unguided and guided searches unless the change itself is part of the study.
+
+## Files and results
+
+| File | Purpose |
+| --- | --- |
+| `seed.S`, `harness.c` | Starting assembly and fixed C harness |
+| `genome.xml` | Seed base and allowed patterns |
+| `population.settings.xml`, `ugp3.settings.xml` | Search settings |
+| `config.py` | Paths, random seed, and simulation limits |
+| `evaluate.py` | Compile programs, run faults, and return fitness |
+| `replay.py` | Compare any candidate with explicitly chosen faults |
+| `select_faults.py` | Shared parser for reports; also retains the old sampling utility |
+| `smoke.py` | Check generation and compilation with dummy fitness |
+| `runs/` | Per-program logs, reports, databases, and replay traces |
+| `results/` | Preserved inputs and results for each experiment |
+| `BEST_raw`, `statistics.csv`, `status.xml` | Best program, progress, and recovery state |
+
+Read `comparison.json` first, then inspect `dependency.csv` and `raw-checker.csv`
+for the full traces. Compare rows only while cycle, PC, issue port, and operand
+agree. After the first mismatch, investigate the sequence before pairing later
+rows. Use changes in internal fields to explain the fault's behavior, and use
+the AXI result to decide whether the fault was detected.
+
+Use `python3 replay.py BEST_raw --fids 645 648` to replay a winner. Replace the
+IDs with the faults you want to inspect. Without arguments, replay retains the
+seed and the two original example IDs. Clean and faulty runs use the same limits
+as ordinary evaluation. Every replay gets a new directory and keeps its own
+`source.S`, reports, and traces, so a later winner cannot overwrite its evidence.
