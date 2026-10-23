@@ -60,17 +60,27 @@ class DatabaseTests(unittest.TestCase):
             evaluate.verify_unused_database(self.base)
         self.assertFalse(any(command[0] == "vc_fcc" for command, _ in self.calls))
 
-    def test_dirty_base_is_preserved_and_not_copied(self):
-        (self.base / "fdb/results").write_text("DD")
+    def test_open_base_is_not_copied(self):
+        # A running server could be changing the files, so the copy is refused.
+        (self.base / "fdb/postmaster.pid").write_text("123")
         work = self.root / "candidate"
         work.mkdir()
         with patch.object(evaluate, "CAMPAIGN_BASE", self.base), \
              patch.object(evaluate, "campaign_is_ready", return_value=True), \
              patch.object(evaluate, "run", side_effect=self.fake_tool):
-            with self.assertRaisesRegex(RuntimeError, "database contains results"):
+            with self.assertRaisesRegex(RuntimeError, "base database is open"):
                 evaluate.copy_campaign(work)
         self.assertFalse((work / "fdb").exists())
-        self.assertTrue((self.base / "fdb/results").exists())
+        self.assertEqual(self.calls, [])
+
+    def test_copy_with_results_is_refused_after_the_run(self):
+        # The counts saved before fsim show results, so the score is not trusted.
+        report = self.root / "unrun-summary.rpt"
+        report.write_text("# Testable Faults: 4\n# Not Attempted NA 0\n")
+        with self.assertRaisesRegex(RuntimeError, "database contains results"):
+            evaluate.require_unused(report)
+        report.write_text("# Testable Faults: 4\n# Not Attempted NA 4\n")
+        evaluate.require_unused(report)
 
     def test_server_must_stop_before_cleanup(self):
         pid = self.base / "fdb/postmaster.pid"

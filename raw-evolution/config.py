@@ -34,6 +34,8 @@ RISCV = TESTYARD / ".conda-env/riscv-tools"
 CC = RISCV / "bin/riscv64-unknown-elf-gcc"
 # Read the address of raw_body from each compiled candidate.
 NM = RISCV / "bin/riscv64-unknown-elf-nm"
+# Print raw_body's instructions so traces can name them.
+OBJDUMP = RISCV / "bin/riscv64-unknown-elf-objdump"
 
 # The linker places a bare-metal program where the harness expects it.
 LINKER = TESTYARD / "tests/htif.ld"
@@ -59,3 +61,9 @@ CAMPAIGN = "chiptop0"
 
 # Freeze the reference once before evolution; never change it during a run.
 FITNESS_REFERENCE = Path(__file__).resolve().parent / "results/fitness-reference.json"
+
+# After each run, trace this many faults that the best program missed.
+REPLAY_FAULTS = 20
+# Replay faults in this many parallel streams, each with its own database copy.
+# Each stream uses one Z01X licence; replays start after MicroGP has finished.
+REPLAY_STREAMS = 4

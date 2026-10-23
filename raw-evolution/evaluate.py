@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -47,6 +49,14 @@ INJECTION_MARKER = "Info : Injecting "
 # Compare their release instead of their different launcher paths.
 TOOL_RELEASE = re.compile(r"(?:VCS|Z01X)_([^/]+)")
 
+# The two monitor traces written by issue_read_operands.sv.
+TRACES = ("dependency.csv", "raw-checker.csv")
+# Names for the numbers in rs1_source/rs2_source (see issue_read_operands.sv).
+SOURCES = {0: "regfile", 1: "forward", 8: "wait", 9: "pc", 10: "zimm", 11: "imm"}
+# Names for the numbers in the fu column, in the order of fu_t in ariane_pkg.sv.
+UNITS = ("NONE", "LOAD", "STORE", "ALU", "CTRL_FLOW", "MULT", "CSR",
+         "FPU", "FPU_VEC", "CVXIF", "ACCEL")
+
 
 class InvalidProgram(RuntimeError):
     """The assembler rejected the candidate, rather than the tool setup."""
@@ -64,6 +74,7 @@ def check() -> None:
     required = [
         (config.CC, "compiler"),
         (config.NM, "symbol reader"),
+        (config.OBJDUMP, "disassembler"),
         (config.SIMV, "fault simulator"),
         (config.DAIDIR, "simulator data"),
         (config.SFF, "fault list"),
@@ -127,9 +138,12 @@ def measure(work: Path, stage: str, **details):
         record_timing(work, entry)
 
 
-def record_task_timings(work: Path) -> None:
+def record_task_timings(work: Path, since: float = 0.0) -> None:
     """Keep Z01X's per-task times before temporary task files are removed."""
     for summary in (work / "fcm.dir").rglob("summary.csv"):
+        # Skip summaries left by an earlier FCM launch, so nothing is counted twice.
+        if summary.stat().st_mtime < since:
+            continue
         with summary.open(newline="") as stream:
             header = None
             for row in csv.reader(stream):
@@ -303,9 +317,10 @@ def build_campaign() -> Path:
     return CAMPAIGN_BASE
 
 
-def stop_database(work: Path) -> None:
+def stop_database(work: Path, database: Path | None = None) -> None:
     """Stop only this database, and refuse to copy or delete it while live."""
-    database = (work / "fdb").resolve()
+    # Replay keeps one database for several faults, so it can live outside work.
+    database = (database or work / "fdb").resolve()
     pid = database / "postmaster.pid"
     if not pid.exists():
         return
@@ -324,19 +339,38 @@ def stop_database(work: Path) -> None:
         raise RuntimeError(f"FDB server still has a PID file: {pid}; preserving database")
 
 
-def run_fcm(work: Path, script: Path, log: Path) -> None:
+def run_fcm(work: Path, script: Path, log: Path, database: Path | None = None) -> None:
     """Open this run's database explicitly and close its server afterwards."""
+    # FCM is vc_fcm: it opens the fault database, runs our Tcl, and writes reports.
+    database = database or work / "fdb"
+    started = time.time()
     try:
-        run(["vc_fcm", "-fdb_path", str((work / "fdb").resolve()),
+        run(["vc_fcm", "-fdb_path", str(database.resolve()),
              "-fdb_project", "default", "-campaign", config.CAMPAIGN,
              "-connect", "-stop_server_on_exit", "-tcl_script", str(script)],
             work, log)
     finally:
         # The exit flag only stops servers that this FCM process started.
         try:
-            record_task_timings(work)
+            record_task_timings(work, since=started)
         finally:
-            stop_database(work)
+            stop_database(work, database)
+
+
+def unused_report_command(report: Path) -> str:
+    """Tcl that writes fault counts; an unused database has every testable fault NA."""
+    return (f"report -campaign {config.CAMPAIGN} -summaryonly "
+            f"-report {{{report}}} -overwrite\n")
+
+
+def require_unused(report: Path) -> None:
+    """Fail unless the counts were taken before any fault had a result."""
+    text = report.read_text(errors="replace")
+    testable = TESTABLE.search(text)
+    unattempted = NOT_ATTEMPTED.search(text)
+    if (not testable or not unattempted or int(testable.group(1)) == 0
+            or int(testable.group(1)) != int(unattempted.group(1))):
+        raise RuntimeError(f"database contains results or lacks NA counts: {report}; preserving it")
 
 
 def verify_unused_database(work: Path) -> None:
@@ -344,17 +378,9 @@ def verify_unused_database(work: Path) -> None:
     report = work / "unrun-summary.rpt"
     report.unlink(missing_ok=True)
     script = work / "check-unrun.tcl"
-    script.write_text(
-        f"report -campaign {config.CAMPAIGN} -summaryonly "
-        f"-report {{{report}}} -overwrite\n"
-    )
+    script.write_text(unused_report_command(report))
     run_fcm(work, script, work / "check-unrun.log")
-    text = report.read_text(errors="replace")
-    testable = TESTABLE.search(text)
-    unattempted = NOT_ATTEMPTED.search(text)
-    if (not testable or not unattempted or int(testable.group(1)) == 0
-            or int(testable.group(1)) != int(unattempted.group(1))):
-        raise RuntimeError(f"database contains results or lacks NA counts: {report}; preserving it")
+    require_unused(report)
 
 
 def remove_run_data(work: Path) -> None:
@@ -368,23 +394,26 @@ def remove_run_data(work: Path) -> None:
 
 
 def copy_campaign(work: Path) -> None:
-    """Copy a stopped, unused database and verify the copy before simulation."""
+    """Copy the stopped base database; the fault-sim Tcl checks the copy is unused."""
     if not campaign_is_ready():
         raise RuntimeError("campaign is not ready; run make campaign first")
 
     if (work / "fdb").exists():
         raise RuntimeError(f"database already exists in {work}; preserve this run before retrying")
 
-    # Replay and evolution can share the base; never open it during a copy.
+    # make campaign checked the base once. Copies only read it, so a shared
+    # lock lets all candidates copy at the same time; make campaign takes the
+    # exclusive lock, so nobody copies while it has the base open.
     with (CAMPAIGN_BASE / "copy.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        verify_unused_database(CAMPAIGN_BASE)
+        fcntl.flock(lock, fcntl.LOCK_SH)
         source = CAMPAIGN_BASE / "fdb"
+        # A PID file means a server has the base open; copying it could give a broken copy.
+        if (source / "postmaster.pid").exists():
+            raise RuntimeError(f"base database is open: {source}; stop its server first")
         if any(path.is_symlink() for path in source.rglob("*")):
             raise RuntimeError(f"database contains symlinks: {source}; refusing raw copy")
         run(["cp", "-a", "--reflink=auto", str(source), str(work / "fdb")],
             work, work / "copy-fdb.log")
-    verify_unused_database(work)
 
 
 def compile_program(source: Path, work: Path) -> Path:
@@ -437,21 +466,35 @@ def raw_body_address(binary: Path) -> int:
     return matches[0]
 
 
-def simulation_args(binary: Path, raw_body_pc: int, max_cycles: int) -> list[str]:
+def simulation_args(binary: Path, raw_body_pc: int, max_cycles: int,
+                    trace_dir: Path | None = None) -> list[str]:
+    # With trace_dir, the monitors write their two CSV traces into that folder.
+    traces = [] if trace_dir is None else [
+        f"+dependency_trace_file={trace_dir / TRACES[0]}",
+        f"+raw_checker_trace_file={trace_dir / TRACES[1]}",
+    ]
     return [
         "+permissive", "+dramsim",
         f"+dramsim_ini_dir={config.DRAMSIM_INI}",
         f"+max-cycles={max_cycles}", f"+ntb_random_seed={config.SEED}",
         f"+loadmem={binary}", f"+raw_body_pc={raw_body_pc:016x}",
-        "+disable_instr_trace", "+verbose", "+permissive-off", str(binary),
+        "+disable_instr_trace", "+verbose", *traces, "+permissive-off", str(binary),
     ]
+
+
+def fault_cycle_limit(cycles: int) -> int:
+    """Give fault simulation 1.5x the clean run's cycles, within the floor and ceiling."""
+    return min(config.MAX_CYCLES, max(config.CYCLE_FLOOR, int(cycles * config.CYCLE_FACTOR)))
 
 
 def probe(binary: Path, work: Path) -> int | None:
     """Run without faults; return cycles, or None for a failed program."""
     log = work / "probe.log"
+    # This clean run also records the traces used for the program's profile.
+    clean = work / "clean"
+    clean.mkdir(exist_ok=True)
     command = [str(config.SIMV), *simulation_args(
-        binary, raw_body_address(binary), config.PROBE_MAX_CYCLES)]
+        binary, raw_body_address(binary), config.PROBE_MAX_CYCLES, trace_dir=clean)]
     with measure(work, "probe") as timing:
         with log.open("w") as stream:
             result = subprocess.run(command, cwd=work, stdout=stream, stderr=subprocess.STDOUT)
@@ -465,6 +508,124 @@ def probe(binary: Path, work: Path) -> int | None:
     return int(passed.group(1))
 
 
+def disassemble(binary: Path) -> dict[int, str]:
+    """Return {pc: instruction text} for every instruction in raw_body."""
+    result = subprocess.run(
+        [str(config.OBJDUMP), "-d", "--no-show-raw-insn", "--disassemble=raw_body", str(binary)],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode:
+        raise RuntimeError(f"objdump failed for {binary}: {result.stderr.strip()}")
+    body = {}
+    for line in result.stdout.splitlines():
+        # Instruction lines look like "    80000290:\taddi\tsp,sp,-16".
+        match = re.match(r"^\s*([0-9a-f]+):\s+(\S.*)$", line)
+        if match:
+            body[int(match.group(1), 16)] = " ".join(match.group(2).split())
+    if not body:
+        raise ValueError(f"objdump found no raw_body instructions in {binary}")
+    return body
+
+
+def open_trace(path: Path):
+    """Open a trace CSV, or its compressed .gz copy if the CSV was compressed."""
+    if path.exists():
+        return path.open(newline="")
+    return gzip.open(f"{path}.gz", "rt", newline="")
+
+
+def write_profile(binary: Path, work: Path, cycles: int) -> None:
+    """Summarize, per raw_body instruction, what the clean run did (Layer 1)."""
+    body = disassemble(binary)
+    # One summary per instruction, in program order.
+    profile = {pc: {"index": index, "pc": f"0x{pc:x}", "asm": body[pc], "issued": 0,
+                    "ports": Counter(), "stall_cycles": Counter(),
+                    "rs1": Counter(), "rs2": Counter(),
+                    "rs1_producers": Counter(), "rs2_producers": Counter()}
+               for index, pc in enumerate(sorted(body))}
+    # (operand, producer unit, distance, port, stalled?) -> how often it happened.
+    events = Counter()
+    # Scoreboard ID -> (pc, unit, issue order) of the last instruction issued with it.
+    producers = {}
+    # Per issue port: operands that had to wait for their producer before issuing.
+    waited = defaultdict(set)
+
+    with open_trace(work / "clean" / TRACES[0]) as stream:
+        # The trace has one row per cycle that an instruction tries to issue.
+        for row in csv.DictReader(stream):
+            pc = int(row["pc"], 16)
+            port = int(row["issue_port"])
+            entry = profile.get(pc)
+            for operand in ("rs1", "rs2"):
+                if row[f"raw_stall_{operand}"] == "1":
+                    waited[port].add(operand)
+            if entry is not None:
+                # Count cycles spent waiting, by reason.
+                if "1" in (row["raw_stall_rs1"], row["raw_stall_rs2"]):
+                    entry["stall_cycles"]["waiting for a producer"] += 1
+                if row["structural_stall"] == "1":
+                    entry["stall_cycles"]["unit busy"] += 1
+                if row["external_stall"] == "1":
+                    entry["stall_cycles"]["pipeline stalled"] += 1
+
+            # Only issued instructions count; flushed ones were thrown away.
+            if row["issue_accepted"] != "1":
+                continue
+            if row["flush"] != "0":
+                waited[port].clear()
+                continue
+            order = int(row["accepted_order"])
+            if entry is not None:
+                entry["issued"] += 1
+                entry["ports"][port] += 1
+                for operand in ("rs1", "rs2"):
+                    code = int(row[f"{operand}_source"])
+                    source = SOURCES.get(code, str(code))
+                    entry[operand][source] += 1
+                    producer = producers.get(int(row[f"{operand}_producer_id"]))
+                    # "forward" means the value came from an older, unfinished instruction: a RAW.
+                    if source != "forward" or producer is None:
+                        continue
+                    producer_pc, unit, producer_order = producer
+                    distance = order - producer_order
+                    name = body.get(producer_pc, "outside raw_body")
+                    entry[f"{operand}_producers"][
+                        f"0x{producer_pc:x} {name} ({unit}, distance {distance})"] += 1
+                    stalled = "stalled" if operand in waited[port] else "no stall"
+                    events[(operand, unit, str(distance) if distance < 4 else "4+",
+                            port, stalled)] += 1
+            # Remember this instruction as the producer for its scoreboard ID.
+            code = int(row["fu"])
+            producers[int(row["consumer_id"])] = (
+                pc, UNITS[code] if code < len(UNITS) else str(code), order)
+            waited[port].clear()
+
+    result = {
+        "format": 1,
+        "clean_cycles": cycles,
+        "legend": {
+            "issued": "times the instruction issued (raw_body runs 256 times)",
+            "rs1/rs2": "where the operand came from when it issued",
+            "rs1_producers/rs2_producers": "older instruction that forwarded the operand; "
+                                           "distance counts issued instructions between them",
+            "events": "every forwarded operand, grouped by operand, producer unit, "
+                      "distance, issue port, and whether it had to wait",
+        },
+        "instructions": [{key: dict(value) if isinstance(value, Counter) else value
+                          for key, value in entry.items()} for entry in profile.values()],
+        "events": [{"operand": operand, "producer_unit": unit, "distance": distance,
+                    "port": port, "stall": stalled, "count": count}
+                   for (operand, unit, distance, port, stalled), count in sorted(events.items())],
+    }
+    (work / "profile.json").write_text(json.dumps(result, indent=2) + "\n")
+
+    # Keep the raw traces for replays, but compressed; they can be large.
+    for name in TRACES:
+        path = work / "clean" / name
+        with path.open("rb") as source, gzip.open(f"{path}.gz", "wb") as target:
+            shutil.copyfileobj(source, target)
+        path.unlink()
+
+
 def write_tcl(
     path: Path,
     binary: Path,
@@ -473,6 +634,7 @@ def write_tcl(
     raw_body_pc: int,
     trace_dir: Path | None = None,
     max_cycles: int | None = None,
+    check_unused: bool = True,
 ) -> None:
     """Write the small Tcl script that runs one candidate."""
     # Refuse a stale or hand-written address before simulation starts.
@@ -486,27 +648,29 @@ def write_tcl(
     # Keep every fault result for later comparisons and monitor replays.
     fault_report = report.with_name("faults.rpt")
 
-    args = " ".join(simulation_args(
-        binary, raw_body_pc, config.MAX_CYCLES if max_cycles is None else max_cycles))
-
     # Replay one fault at a time; ordinary fitness runs leave tracing off.
-    if trace_dir is not None:
-        args = args.replace(
-            "+permissive-off",
-            f"+dependency_trace_file={trace_dir / 'dependency.csv'} "
-            f"+raw_checker_trace_file={trace_dir / 'raw-checker.csv'} +permissive-off",
-        )
+    args = " ".join(simulation_args(
+        binary, raw_body_pc, config.MAX_CYCLES if max_cycles is None else max_cycles,
+        trace_dir=trace_dir))
 
+    # Normal runs keep Z01X's default COATS step, which labels each missed fault
+    # as never excited (NC) or excited but never seen at the boundary (NO).
+    # A replay must really simulate its fault, so it skips COATS.
+    fsim_command = "fsim -verbose" if trace_dir is None else "fsim -verbose -no_coats"
     # Omit -fids only for the final comparison against the complete list.
-    if ids is None:
-        fsim_command = "fsim -verbose -no_coats"
-    else:
+    if ids is not None:
         selected = " ".join(str(fid) for fid in ids)
-        fsim_command = f"fsim -verbose -no_coats -fids {{{selected}}}"
+        fsim_command += f" -fids {{{selected}}}"
+
+    # Before simulating, save counts that prove this database copy is unused.
+    # Doing it in the same FCM launch saves starting the database server twice.
+    unused = ("# Prove the database has no results yet.\n"
+              + unused_report_command(report.with_name("unrun-summary.rpt"))
+              if check_unused else "")
 
     # Keep one test case, one run of the faults, and one final report.
     path.write_text(
-        f"""# Limit how many jobs Z01X may run at once.
+        f"""{unused}# Limit how many jobs Z01X may run at once.
 set_config -global_max_jobs {config.WORKERS}
 # Run ordinary faults in parallel.
 set_config -fsim_mode {'serial' if trace_dir is not None else 'concurrent'}
@@ -514,7 +678,7 @@ set_config -fsim_mode {'serial' if trace_dir is not None else 'concurrent'}
 set_config -update_interval 120
 # Use the candidate as the only test case.
 create_testcases -name raw_candidate -exec {{{config.SIMV}}} -args {{{args}}}
-# Skip COATS and run the requested fault set.
+# Run the requested fault set.
 {fsim_command}
 # Save every fault before the private database is removed.
 report -format standard -campaign {config.CAMPAIGN} -report {{{fault_report}}} -overwrite
@@ -533,6 +697,9 @@ def require_injection_marker(work: Path) -> None:
     for log in task_logs:
         text = log.read_text(errors="replace")
         if "Chronologic VCS simulator" not in text:
+            continue
+        # tsim tasks are fault-free runs (COATS, serial mode); they never inject.
+        if log.parent.name.startswith("tsim"):
             continue
         simulator_logs.append(log)
         count = text.count(INJECTION_MARKER)
@@ -605,7 +772,12 @@ def detection_evidence(report: Path) -> dict:
         raise ValueError(f"detailed detections do not match DG in {summary}; refusing to guess IDs")
     if any(f.status == "IF" for f in faults):
         raise ValueError(f"illegal file I/O in {report}; refusing to score it")
+    # Every fault ID grouped by its final status (DD, NC, NO, ND, ...).
+    by_status = defaultdict(list)
+    for fault in faults:
+        by_status[fault.status].append(fault.fid)
     return {"format": 1, "total": total, "detected_ids": ids,
+            "ids_by_status": dict(sorted(by_status.items())),
             "sff_sha256": hashlib.sha256(config.SFF.read_bytes()).hexdigest(),
             "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest()}
 
@@ -780,11 +952,15 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
     binary = work / "candidate.riscv"
     cycles = probe(binary, work)
     if cycles is None:
+        # A failing program's traces are useless and can be large.
+        shutil.rmtree(work / "clean", ignore_errors=True)
         (work / "rejected.txt").write_text("fault-free program failed; see probe.log\n")
         return 0.0
-    max_cycles = min(config.MAX_CYCLES, max(config.CYCLE_FLOOR,
-                                         int(cycles * config.CYCLE_FACTOR)))
-    write_tcl(tcl, binary, ids, report, raw_body_address(binary), max_cycles=max_cycles)
+    # Layer 1: what this program exercises, from the clean run's traces.
+    with measure(work, "profile"):
+        write_profile(binary, work, cycles)
+    write_tcl(tcl, binary, ids, report, raw_body_address(binary),
+              max_cycles=fault_cycle_limit(cycles))
 
     # Copy the same stopped database without inheriting earlier results.
     with measure(work, "prepare_fdb"):
@@ -792,6 +968,9 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
 
     # Connect to the campaign and simulate only the chosen faults.
     run_fcm(work, tcl, work / "fcm.log")
+
+    # The Tcl saved fault counts before simulating; they prove the copy was unused.
+    require_unused(work / "unrun-summary.rpt")
 
     # A valid report is not enough if the commit trigger never fired.
     require_injection_marker(work)
@@ -898,7 +1077,33 @@ def main() -> int:
     # Use a local file when the variable is absent.
     output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
     output.write_text("".join(f"{coverage:.12f} {extra}\n" for coverage, extra in values))
+
+    # make evolve sets RAW_MANIFEST so every candidate of the run is listed.
+    manifest = os.environ.get("RAW_MANIFEST")
+    if manifest and validation_ids is None:
+        write_manifest(Path(manifest), args.sources, values)
     return 0
+
+
+def write_manifest(manifest: Path, sources: list[Path], values: list[tuple]) -> None:
+    """Add one line per candidate: its MicroGP name, scores, and result folder."""
+    lines = []
+    for source, (coverage, extra) in zip(sources, values):
+        work = RUNS / "full" / evaluation_digest(source, True)
+        rejected = work / "rejected.txt"
+        lines.append(json.dumps({
+            "individual": source.name,
+            "digest": work.name,
+            # Relative to raw-evolution/; holds source.S, profile.json, reports, and timings.
+            "run_dir": str(work.relative_to(HERE)),
+            "coverage": coverage,
+            "beyond_reference": extra,
+            "rejected": rejected.read_text().strip() if rejected.exists() else None,
+        }) + "\n")
+    # Lock in case two evaluator processes ever finish together.
+    with manifest.open("a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        stream.write("".join(lines))
 
 
 if __name__ == "__main__":

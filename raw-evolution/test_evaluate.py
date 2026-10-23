@@ -42,6 +42,8 @@ class EvaluationTests(unittest.TestCase):
             "Section 1\n, task, testcase, num faults, elapsed time, CPU time, details\n"
             ", ID, , , [s], [s],\n,1,raw_candidate,4,7,6.5,DD:4\n")
         evaluate.record_task_timings(self.root)
+        # A later FCM launch must not record the same summary again.
+        evaluate.record_task_timings(self.root, since=(tasks / "summary.csv").stat().st_mtime + 1)
         shutil.rmtree(tasks)
         entry = json.loads((self.root / "timings.jsonl").read_text())
         self.assertEqual(entry["elapsed_seconds"], 7)
@@ -131,9 +133,11 @@ class EvaluationTests(unittest.TestCase):
              patch.object(evaluate, "evaluation_digest", return_value="same"), \
              patch.object(evaluate, "prepare", side_effect=prepare) as build, \
              patch.object(evaluate, "probe", return_value=100000) as probe, \
+             patch.object(evaluate, "write_profile"), \
              patch.object(evaluate, "raw_body_address", return_value=0x80000000), \
              patch.object(evaluate, "copy_campaign"), \
              patch.object(evaluate, "run_fcm", side_effect=fcm) as campaign, \
+             patch.object(evaluate, "require_unused"), \
              patch.object(evaluate, "require_injection_marker",
                           side_effect=lambda wd: (wd / "injection-markers.txt").touch()), \
              patch.object(evaluate, "remove_run_data"):
@@ -197,8 +201,24 @@ class EvaluationTests(unittest.TestCase):
         with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
             evaluate.write_tcl(tcl, self.root / "candidate.riscv", None,
                                self.root / "summary.rpt", 0x80000290)
-        self.assertIn("fsim -verbose -no_coats", tcl.read_text())
-        self.assertNotIn("-fids", tcl.read_text())
+        text = tcl.read_text()
+        # COATS stays on, so missed faults get NC/NO labels.
+        self.assertIn("fsim -verbose\n", text)
+        self.assertNotIn("-no_coats", text)
+        self.assertNotIn("-fids", text)
+        self.assertNotIn("trace_file", text)
+        # The unused-database counts come first, in the same FCM launch.
+        self.assertLess(text.index("unrun-summary.rpt"), text.index("fsim -verbose"))
+
+    def test_replay_tcl_traces_one_fault_without_coats(self):
+        tcl = self.root / "fsim.tcl"
+        with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
+            evaluate.write_tcl(tcl, self.root / "candidate.riscv", [7], self.root / "summary.rpt",
+                               0x80000290, trace_dir=self.root, check_unused=False)
+        text = tcl.read_text()
+        self.assertIn("fsim -verbose -no_coats -fids {7}", text)
+        self.assertIn(f"+dependency_trace_file={self.root / 'dependency.csv'}", text)
+        self.assertNotIn("unrun-summary.rpt", text)
 
     def test_full_fitness_counts_only_definite_detections(self):
         report = self.root / "summary.rpt"
@@ -339,9 +359,11 @@ class EvaluationTests(unittest.TestCase):
              patch.object(evaluate, "evaluation_digest", return_value="candidate"), \
              patch.object(evaluate, "prepare", return_value=(work, work / "fsim.tcl")), \
              patch.object(evaluate, "probe", return_value=100000), \
+             patch.object(evaluate, "write_profile"), \
              patch.object(evaluate, "raw_body_address", return_value=0x80000290), \
              patch.object(evaluate, "copy_campaign") as copy, \
              patch.object(evaluate, "run_fcm", side_effect=run) as fcm, \
+             patch.object(evaluate, "require_unused"), \
              patch.object(evaluate, "require_injection_marker"), \
              patch.object(evaluate, "remove_run_data"):
             self.assertEqual(evaluate.score(Path("seed.S")), 50.0)
@@ -352,7 +374,8 @@ class EvaluationTests(unittest.TestCase):
             "detected_ids"], [1, 3])
         self.assertFalse((work / "detected-ids.json.tmp").exists())
 
-    def test_replay_accepts_a_winner_and_explicit_fault_ids(self):
+    def replay_two_faults(self, streams):
+        """Replay faults 1 and 2 with every tool mocked; return the mocks and the folder."""
         sff = self.root / "faults.sff"
         sff.write_text('FaultList {\nNA 0 {PORT "core.a"}\nNA 1 {PORT "core.b"}\n}\n')
         winner = self.root / "BEST_raw"
@@ -366,27 +389,184 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(source.read_text(), "winner assembly\n")
             return work / "candidate.riscv"
 
-        def fcm(work, *args):
+        def fcm(work, *args, database):
             (work / "summary.rpt").write_text("# Detected DG 1\n")
+            (work / "faults.rpt").write_text(sff.read_text().replace("NA 1", "DD 1"))
 
         with patch.object(replay.evaluate, "check"), \
              patch.object(replay.config, "SFF", sff), \
+             patch.object(replay.config, "REPLAY_STREAMS", streams), \
              patch.object(replay.evaluate, "RUNS", self.root), \
+             patch.object(replay.evaluate, "evaluation_digest", return_value="never-evaluated"), \
              patch.object(replay.evaluate, "compile_program", side_effect=build), \
              patch.object(replay.evaluate, "raw_body_address", return_value=0x80000290), \
              patch.object(replay.evaluate, "run", side_effect=clean), \
-             patch.object(replay.evaluate, "copy_campaign"), \
+             patch.object(replay.evaluate, "copy_campaign") as copy, \
              patch.object(replay.evaluate, "write_tcl") as tcl, \
-             patch.object(replay.evaluate, "run_fcm", side_effect=fcm), \
-             patch.object(replay, "require_fault_injection"), \
+             patch.object(replay.evaluate, "run_fcm", side_effect=fcm) as run_fcm, \
+             patch.object(replay.evaluate, "require_unused") as unused, \
+             patch.object(replay.evaluate, "require_injection_marker"), \
              patch.object(replay, "compare", return_value={"changed_fields": {}}), \
              patch.object(replay.evaluate, "remove_run_data"):
-            replay.main([str(winner), "--fids", "2"])
-        self.assertEqual(tcl.call_args.args[2], [2])
-        self.assertEqual(tcl.call_args.kwargs["max_cycles"], 150000)
-        result = json.loads(next(self.root.glob("monitor-replay-*/comparison.json")).read_text())
-        self.assertEqual(list(result["faults"]), ["2"])
+            replay.main([str(winner), "--fids", "1", "2"])
+        root = next(self.root.glob("monitor-replay-*"))
+        result = json.loads((root / "comparison.json").read_text())
+        self.assertEqual(list(result["faults"]), ["1", "2"])
+        self.assertEqual(result["faults"]["2"]["replay_status"], "DD")
         self.assertEqual(Path(result["source"]).read_text(), winner.read_text())
+        self.assertEqual(tcl.call_args.kwargs["max_cycles"], 150000)
+        return copy, tcl, run_fcm, unused, root
+
+    def test_one_stream_copies_the_database_once_for_all_faults(self):
+        copy, tcl, run_fcm, unused, root = self.replay_two_faults(streams=1)
+        # One copy, shared by both faults; only the first run checks it is unused.
+        copy.assert_called_once_with(root / "stream-0")
+        self.assertEqual([call.kwargs["check_unused"] for call in tcl.call_args_list], [True, False])
+        unused.assert_called_once()
+        self.assertEqual({call.kwargs["database"] for call in run_fcm.call_args_list},
+                         {root / "stream-0/fdb"})
+        self.assertEqual(tcl.call_args.args[2], [2])
+
+    def test_two_streams_replay_side_by_side_on_their_own_copies(self):
+        copy, tcl, run_fcm, unused, root = self.replay_two_faults(streams=2)
+        # Each stream has its own copy, and each copy is checked by its first run.
+        self.assertEqual(sorted(call.args[0] for call in copy.call_args_list),
+                         [root / "stream-0", root / "stream-1"])
+        self.assertEqual([call.kwargs["check_unused"] for call in tcl.call_args_list], [True, True])
+        self.assertEqual(unused.call_count, 2)
+        databases = {call.args[0].name: call.kwargs["database"] for call in run_fcm.call_args_list}
+        self.assertEqual(databases, {"fid-1": root / "stream-0/fdb", "fid-2": root / "stream-1/fdb"})
+
+    def test_replay_reuses_the_clean_traces_from_evaluation(self):
+        work = self.root / "full/evaluated"
+        work.mkdir(parents=True)
+        (work / "profile.json").write_text("{}")
+        (work / "probe.log").write_text("CVA6 RAW: injecting faults\n"
+                                        "*** PASSED *** Completed after 4000 simulation cycles\n")
+        with patch.object(replay.evaluate, "RUNS", self.root), \
+             patch.object(replay.evaluate, "evaluation_digest", return_value="evaluated"), \
+             patch.object(replay.evaluate, "compile_program") as build, \
+             patch.object(replay.evaluate, "run") as simulate:
+            result = replay.clean_traces(self.root / "source.S", self.root)
+        self.assertEqual(result, (work / "clean", work / "candidate.riscv", 4000))
+        build.assert_not_called()
+        simulate.assert_not_called()
+
+    def dependency_trace(self, path, rows):
+        header = ("cycle,issue_port,pc,instruction,consumer_id,fu,operation,rs1,rs2,"
+                  "rs1_has_raw,rs2_has_raw,rs1_producer_id,rs2_producer_id,rs1_ready,rs2_ready,"
+                  "rs1_forwarded,rs2_forwarded,rs1_source,rs2_source,same_cycle_dep_rs1,"
+                  "same_cycle_dep_rs2,same_cycle_bypass_rs1,same_cycle_bypass_rs2,raw_stall_rs1,"
+                  "raw_stall_rs2,structural_stall,external_stall,issue_accepted,flush,"
+                  "accepted_order,operand_a,operand_b,raw_matches_rs1,raw_matches_rs2").split(",")
+        lines = [",".join(header)]
+        for values in rows:
+            lines.append(",".join(str(values.get(name, 0)) for name in header))
+        path.write_text("\n".join(lines) + "\n")
+
+    def test_profile_names_each_forwarded_operand_and_its_producer(self):
+        clean = self.root / "clean"
+        clean.mkdir()
+        self.dependency_trace(clean / "dependency.csv", [
+            # Harness code, then addi (ALU) and a xor that waits one cycle for it.
+            {"pc": "50", "consumer_id": 0, "fu": 3, "issue_accepted": 1, "accepted_order": 1},
+            {"pc": "100", "consumer_id": 1, "fu": 3, "issue_accepted": 1, "accepted_order": 2},
+            {"pc": "104", "consumer_id": 2, "fu": 3, "rs1_has_raw": 1, "rs1_producer_id": 1,
+             "rs1_source": 8, "raw_stall_rs1": 1},
+            {"pc": "104", "consumer_id": 2, "fu": 3, "rs1_has_raw": 1, "rs1_producer_id": 1,
+             "rs1_source": 1, "issue_accepted": 1, "accepted_order": 3},
+        ])
+        (clean / "raw-checker.csv").write_text("cycle\n")
+        body = {0x100: "addi t0,a0,17", 0x104: "xor t1,t0,a0"}
+        with patch.object(evaluate, "disassemble", return_value=body):
+            evaluate.write_profile(self.root / "candidate.riscv", self.root, 4000)
+        profile = json.loads((self.root / "profile.json").read_text())
+        addi, xor = profile["instructions"]
+        self.assertEqual(addi["issued"], 1)
+        self.assertEqual(xor["rs1"], {"forward": 1})
+        self.assertEqual(xor["rs1_producers"], {"0x100 addi t0,a0,17 (ALU, distance 1)": 1})
+        self.assertEqual(xor["stall_cycles"], {"waiting for a producer": 1})
+        self.assertEqual(profile["events"], [{"operand": "rs1", "producer_unit": "ALU",
+                                              "distance": "1", "port": 0, "stall": "stalled",
+                                              "count": 1}])
+        # The raw traces are kept compressed, and still readable for replays.
+        self.assertFalse((clean / "dependency.csv").exists())
+        with evaluate.open_trace(clean / "dependency.csv") as stream:
+            self.assertIn("consumer_id", stream.readline())
+
+    def test_manifest_lists_every_candidate_of_the_batch(self):
+        manifest = self.root / "manifest.jsonl"
+        runs = self.root / "runs"
+        (runs / "full/bad").mkdir(parents=True)
+        (runs / "full/bad/rejected.txt").write_text("assembly rejected\n")
+        output = self.root / "fitness.output"
+        with patch.object(sys, "argv", ["evaluate.py", "individualAAB", "individualAAC"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output),
+                                              "RAW_MANIFEST": str(manifest)}), \
+             patch.object(evaluate, "HERE", self.root), \
+             patch.object(evaluate, "RUNS", runs), \
+             patch.object(evaluate, "evaluation_digest",
+                          side_effect=lambda source, full: "good" if source.name.endswith("B") else "bad"), \
+             patch.object(evaluate, "score", side_effect=[19.0, 0.0]), \
+             patch.object(evaluate, "complementary_detections", return_value=0):
+            evaluate.main()
+        good, bad = [json.loads(line) for line in manifest.read_text().splitlines()]
+        self.assertEqual(good["individual"], "individualAAB")
+        self.assertEqual(good["run_dir"], "runs/full/good")
+        self.assertIsNone(good["rejected"])
+        self.assertEqual(bad["rejected"], "assembly rejected")
+
+    def test_run_report_merges_candidates_and_replays_the_best(self):
+        sff = self.root / "faults.sff"
+        sff.write_text("FaultList {\n" + "\n".join(
+            f'NA 0 {{PORT "core.issue_stage_i.sig{i}"}}' for i in range(4)) + "\n}\n")
+        run = self.root / "results/run1"
+        run.mkdir(parents=True)
+
+        def program(name, coverage, by_status, events):
+            work = self.root / "runs/full" / name
+            work.mkdir(parents=True)
+            (work / "detected-ids.json").write_text(json.dumps({"ids_by_status": by_status}))
+            (work / "profile.json").write_text(json.dumps({"events": events}))
+            return {"individual": f"individual{name}", "digest": name,
+                    "run_dir": f"runs/full/{name}", "coverage": coverage,
+                    "beyond_reference": 0, "rejected": None}
+
+        event = {"operand": "rs1", "producer_unit": "ALU", "distance": "1",
+                 "port": 0, "stall": "no stall", "count": 5}
+        entries = [
+            program("A", 25.0, {"DD": [1], "NO": [2, 3], "NC": [4]}, [event]),
+            program("B", 50.0, {"DD": [1, 2], "NO": [3], "NC": [4]}, [event]),
+            {"individual": "individualC", "digest": "C", "run_dir": "runs/full/C",
+             "coverage": 0.0, "beyond_reference": 0, "rejected": "assembly rejected"},
+        ]
+        (run / "manifest.jsonl").write_text("".join(json.dumps(e) + "\n" for e in entries))
+        with patch.object(replay.config, "SFF", sff), \
+             patch.object(replay.evaluate, "HERE", self.root), \
+             patch.object(replay.config, "REPLAY_FAULTS", 5), \
+             patch.object(replay, "replay_faults") as replays:
+            replay.report_run(run)
+        report = json.loads((run / "report.json").read_text())
+        self.assertEqual(report["best"]["individual"], "individualB")
+        self.assertEqual((report["candidates"], report["rejected"]), (3, 1))
+        # Fault 2 is detected by B, so it is no longer missed.
+        self.assertEqual(report["faults_by_best_status"], {"DD": 2, "NO": 1, "NC": 1})
+        self.assertEqual(report["missed_ids"], {"NO": [3], "NC": [4]})
+        self.assertEqual(report["missed_by_signal"], {"sig2": {"NO": 1}, "sig3": {"NC": 1}})
+        self.assertEqual(report["events_seen"][0]["programs"], 2)
+        self.assertIn({"operand": "rs2", "producer_unit": "ALU", "distance": "1",
+                       "port": 0, "stall": "no stall"}, report["events_never_seen"])
+        # Only the best program's excited-but-missed faults are replayed.
+        replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays")
+
+    def test_injection_check_ignores_fault_free_tsim_tasks(self):
+        for name, text in (("fsim:1", "Chronologic VCS simulator\nInfo : Injecting x\n"),
+                           ("tsim:1", "Chronologic VCS simulator\n")):
+            task = self.root / "fcm.dir" / name
+            task.mkdir(parents=True)
+            (task / "out.log").write_text(text)
+        evaluate.require_injection_marker(self.root)
+        self.assertIn("fsim:1", (self.root / "injection-markers.txt").read_text())
 
 
 if __name__ == "__main__":

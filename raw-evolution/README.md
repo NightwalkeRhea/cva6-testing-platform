@@ -62,10 +62,16 @@ observation points throughout the comparison. `--full` remains accepted but is
 no longer needed; only the four-fault validation uses a subset.
 
 Each candidate reuses the simulator and SFF and receives a copy of the stopped
-database in `campaign-base/`. The base and its copy must have all testable faults
-marked NA before simulation. Each run opens its own database by its explicit
+database in `campaign-base/`. `make campaign` checks once that the base has all
+testable faults marked NA; candidates then copy it in parallel. Each copy is
+checked at the start of its own fault-simulation run, so a candidate starts the
+database server only once. Each run opens its own database by its explicit
 path. Successful evaluations stop their server and remove the private database
 after saving reports; failed runs retain their files.
+
+Fault simulation keeps Z01X's default COATS step. It labels each missed fault
+as never excited (`NC`) or excited but never seen at the boundary (`NO`).
+Replays skip COATS, because they must simulate their fault.
 
 Before copying the database, the evaluator runs the candidate without faults.
 A failed program or one that exceeds one million cycles receives zero fitness.
@@ -119,29 +125,67 @@ the unguided and guided searches unless the change itself is part of the study.
 | `population.settings.xml`, `ugp3.settings.xml` | Search settings |
 | `config.py` | Paths, random seed, and simulation limits |
 | `evaluate.py` | Compile programs, run faults, and return fitness |
-| `replay.py` | Compare any candidate with explicitly chosen faults |
+| `replay.py` | Compare any candidate with chosen faults; `--run` summarizes a whole run |
 | `select_faults.py` | Shared parser for reports; also retains the old sampling utility |
 | `smoke.py` | Check generation and compilation with dummy fitness |
 | `runs/` | Per-program logs, reports, databases, and replay traces |
 | `results/` | Preserved inputs and results for each experiment |
-| `BEST_raw`, `statistics.csv`, `status.xml` | Best program, progress, and recovery state |
+| `BEST_raw`, `statistics.csv`, `status.xml` | Best program, progress, and final population (moved to `results/RUN/`) |
 
 Read `timings.jsonl` in each run directory to benchmark elapsed seconds for
-compilation, the clean probe, preparing the FDB, FCM, and the whole candidate.
+compilation, the clean probe, the profile, preparing the FDB, FCM, and the whole candidate.
 The FCM measurement includes reporting; use `z01x_task` entries for the elapsed
 and CPU times reported by Z01X for each task. 
 Campaign compilation is recorded separately in `campaign-base/timings.jsonl`.
 Cache hits, failures, the host, and worker count are recorded too. Exclude cache
 hits when comparing simulation costs, and do not sum nested stage measurements.
 
-Read `comparison.json` first, then inspect `dependency.csv` and `raw-checker.csv`
-for the full traces. Compare rows only while cycle, PC, issue port, and operand
-agree. After the first mismatch, investigate the sequence before pairing later
-rows. Use changes in internal fields to explain the fault's behavior, and use
-the AXI result to decide whether the fault was detected.
+## What each run produces
 
-Use `python3 replay.py BEST_raw --fids 645 648` to replay a winner. Replace the
-IDs with the faults you want to inspect. Without arguments, replay retains the
-seed and the two original example IDs. Clean and faulty runs use the same limits
-as ordinary evaluation. Every replay gets a new directory and keeps its own
-`source.S`, reports, and traces, so a later winner cannot overwrite its evidence.
+`make evolve RUN=name` leaves everything for the LLM step in `results/name/`:
+
+| File | Contents |
+| --- | --- |
+| inputs | `seed.S`, `genome.xml`, both settings files, `config.py`, `fitness-reference.json` |
+| `manifest.jsonl` | One line per candidate: MicroGP name, scores, rejection reason, `run_dir` |
+| `BEST_raw`, `status.xml`, `statistics.csv`, `ugp3.log`, `individuals/` | MicroGP's outputs; `status.xml` holds the genomes of the final population |
+| `report.json` | The whole run merged; see below |
+| `replays/comparison.json` | Traces of single faults the best program excited but missed |
+
+Each `run_dir` in the manifest (below `runs/full/`) holds one program's evidence:
+
+- `source.S`: the exact program.
+- `profile.json`: what the program exercised, from a clean run. For each
+  `raw_body` instruction: how often it issued and on which port, where each
+  operand came from, which older instruction forwarded it and at what
+  distance, and the cycles spent waiting. `events` groups every forwarded
+  operand by operand, producer unit, distance, port, and stall.
+- `detected-ids.json`: `ids_by_status` lists every fault ID by its final status.
+- `faults.rpt`, `summary.rpt`: Z01X's reports. `timings.jsonl`: time spent per stage.
+- `clean/*.csv.gz`: the clean run's full monitor traces, compressed.
+
+`report.json` keeps each fault's best status across all programs. It also lists
+missed faults per signal, forwarding events with the number of programs that
+produced them, and combinations that no program produced. Some combinations may
+be impossible on CVA6. The best program's genome is in `status.xml` under its
+individual name.
+
+The replays use up to `REPLAY_FAULTS` (in `config.py`) of the best program's
+`NO` faults, spread across signals. Without `NO` labels, they use `ND` faults.
+They run in `REPLAY_STREAMS` parallel streams. Each stream replays its faults
+one after another on its own database copy, and every replay reuses the clean
+traces from evaluation. Each stream uses one Z01X licence.
+
+In `comparison.json`, `replay_status` says whether that fault alone was
+detected. Compare rows only while cycle, PC, issue port, and operand agree.
+After the first mismatch, investigate the sequence before pairing later rows.
+Use changes in internal fields to explain the fault's behavior, and use the AXI
+result to decide whether the fault was detected. The trace columns
+`same_cycle_dep_*` and `same_cycle_bypass_*` are always 0; ignore them.
+
+Use `python3 replay.py BEST_raw --fids 645 648` to replay any program by hand.
+Replace the IDs with the faults you want to inspect. Without arguments, replay
+retains the seed and the two original example IDs. Clean and faulty runs use the
+same limits as ordinary evaluation. Every replay gets a new directory and keeps
+its own `source.S`, reports, and traces, so a later winner cannot overwrite its
+evidence.

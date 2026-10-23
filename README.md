@@ -253,10 +253,11 @@ These two replays are diagnostic examples, not evidence that the monitors
 explain every fault. Scoring still uses the entire campaign. There is no command
 yet that turns the traces into revised tests or templates automatically.
 
-To trace a winner instead, use its assembly file and the IDs you want to inspect:
+`make evolve` in step 8 already replays each run's best program. To trace
+another program by hand, give its assembly file and the IDs you want to inspect:
 
 ```bash
-make replay CANDIDATE=BEST_raw FIDS="645 648"
+make replay CANDIDATE=results/guided-axi-01/BEST_raw FIDS="645 648"
 ```
 
 Use the candidate's `detected-ids.json` and `faults.rpt` to inspect which faults
@@ -269,29 +270,23 @@ Give the traces and the current genome to the LLM, review its proposed changes,
 and apply the changes you want to test. Run `make smoke` after editing the genome.
 Keep the seed, campaign, observation points, and scoring policy fixed.
 
-Save the inputs before starting. Use a new directory for each experiment.
+Give each MicroGP run a new name. One command saves the inputs, runs the
+search, collects MicroGP's outputs, writes `report.json`, and replays the best
+program's missed faults:
 
 ```bash
-mkdir results/guided-axi
-cp seed.S genome.xml population.settings.xml ugp3.settings.xml config.py \
-  results/guided-axi/
-cp results/fitness-reference.json results/guided-axi/
-
-make evolve 2>&1 | tee "$HOME/cva6-raw-guided.log"
+make evolve RUN=guided-axi-01 2>&1 | tee "$HOME/cva6-raw-guided.log"
 echo "Status: ${PIPESTATUS[0]}"
 ```
 
-After a successful run, save its outputs before starting another evolution:
+Everything lands in `results/guided-axi-01/`. Hand that directory to the LLM
+step; [raw-evolution/README.md](raw-evolution/README.md#what-each-run-produces)
+lists its contents. The command refuses an existing name and refuses to start
+while MicroGP files from an older run are still in `raw-evolution/`.
 
-```bash
-cp BEST_raw status.xml statistics*.csv results/guided-axi/
-cp "$HOME/cva6-raw-guided.log" results/guided-axi/
-```
-
-Use `BEST_raw` for the best program and the statistics CSV to inspect progress.
-Check the CSV filename printed at startup; MicroGP uses a dated filename if an
-older `statistics.csv` exists. The copy command above keeps both. Preserve
-`status.xml` if you need to resume the run later.
+If MicroGP or a replay fails, its files stay where they are for review. After
+fixing a failed replay, move `results/RUN/replays` aside and run
+`make report RUN=guided-axi-01` to redo only the report and replays.
 
 Run only one evolution in this directory to avoid sharing MicroGP's output
 files between runs. Keep the seed, genome, settings, and evaluator unchanged
