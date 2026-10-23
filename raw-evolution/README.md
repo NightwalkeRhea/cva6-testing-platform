@@ -126,6 +126,14 @@ the unguided and guided searches unless the change itself is part of the study.
 | `results/` | Preserved inputs and results for each experiment |
 | `BEST_raw`, `statistics.csv`, `status.xml` | Best program, progress, and recovery state |
 
+Read `timings.jsonl` in each run directory to benchmark elapsed seconds for
+compilation, the clean probe, preparing the FDB, FCM, and the whole candidate.
+The FCM measurement includes reporting; use `z01x_task` entries for the elapsed
+and CPU times reported by Z01X for each task. 
+Campaign compilation is recorded separately in `campaign-base/timings.jsonl`.
+Cache hits, failures, the host, and worker count are recorded too. Exclude cache
+hits when comparing simulation costs, and do not sum nested stage measurements.
+
 Read `comparison.json` first, then inspect `dependency.csv` and `raw-checker.csv`
 for the full traces. Compare rows only while cycle, PC, issue port, and operand
 agree. After the first mismatch, investigate the sequence before pairing later

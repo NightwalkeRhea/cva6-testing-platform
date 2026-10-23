@@ -22,6 +22,57 @@ class EvaluationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
+    def test_elapsed_times_and_failures_are_saved(self):
+        with patch.object(evaluate.time, "perf_counter", side_effect=[10.0, 12.5]):
+            with evaluate.measure(self.root, "compile"):
+                pass
+        with self.assertRaisesRegex(RuntimeError, "failed"):
+            with evaluate.measure(self.root, "fcm"):
+                raise RuntimeError("failed")
+        entries = [json.loads(line) for line in (self.root / "timings.jsonl").read_text().splitlines()]
+        self.assertEqual(entries[0]["elapsed_seconds"], 2.5)
+        self.assertEqual(entries[0]["status"], "ok")
+        self.assertEqual(entries[1]["status"], "error")
+        self.assertIn("host", entries[0])
+
+    def test_task_times_survive_task_directory_removal(self):
+        tasks = self.root / "fcm.dir"
+        tasks.mkdir()
+        (tasks / "summary.csv").write_text(
+            "Section 1\n, task, testcase, num faults, elapsed time, CPU time, details\n"
+            ", ID, , , [s], [s],\n,1,raw_candidate,4,7,6.5,DD:4\n")
+        evaluate.record_task_timings(self.root)
+        shutil.rmtree(tasks)
+        entry = json.loads((self.root / "timings.jsonl").read_text())
+        self.assertEqual(entry["elapsed_seconds"], 7)
+        self.assertEqual(entry["cpu_seconds"], 6.5)
+        self.assertEqual(entry["faults"], "4")
+        self.assertEqual(entry["testcase"], "raw_candidate")
+
+    def test_command_returncode_is_saved_on_failure(self):
+        with patch.object(evaluate.subprocess, "run") as process:
+            process.return_value.returncode = 3
+            with self.assertRaisesRegex(RuntimeError, "command failed"):
+                evaluate.run(["vc_fcm"], self.root, self.root / "fcm.log")
+        entry = json.loads((self.root / "timings.jsonl").read_text())
+        self.assertEqual(entry["returncode"], 3)
+        self.assertEqual(entry["status"], "error")
+
+    def test_cached_candidate_is_labelled_for_benchmarks(self):
+        work = self.root / "full" / "cached"
+        work.mkdir(parents=True)
+        for name in ("summary.rpt", "faults.rpt", "injection-markers.txt"):
+            (work / name).touch()
+        with patch.object(evaluate, "RUNS", self.root), \
+             patch.object(evaluate, "evaluation_digest", return_value="cached"), \
+             patch.object(evaluate, "score_locked", return_value=18.74):
+            self.assertEqual(evaluate.score(Path("seed.S")), 18.74)
+        entries = [json.loads(line) for line in (work / "timings.jsonl").read_text().splitlines()]
+        candidate = next(entry for entry in entries if entry["stage"] == "candidate")
+        self.assertTrue(candidate["cache_hit"])
+        self.assertFalse(candidate["rejected"])
+        self.assertEqual(candidate["coverage"], 18.74)
+
     def test_probe_reads_cycles_and_rejects_failure_but_not_tool_errors(self):
         cases = [
             ("*** PASSED *** Completed after 123456 simulation cycles", 0, 123456),

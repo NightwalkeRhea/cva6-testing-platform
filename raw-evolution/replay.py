@@ -114,7 +114,8 @@ def main(argv=None):
         work = root / f"fid-{fid}"
         work.mkdir()
         print(f"Copying database and replaying FID {fid}", flush=True)
-        evaluate.copy_campaign(work)
+        with evaluate.measure(work, "prepare_fdb"):
+            evaluate.copy_campaign(work)
         evaluate.write_tcl(work / "fsim.tcl", binary, [fid], work / "summary.rpt", pc,
                            trace_dir=work, max_cycles=max_cycles)
         evaluate.run_fcm(work, work / "fsim.tcl", work / "fcm.log")

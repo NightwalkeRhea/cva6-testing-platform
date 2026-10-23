@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import fcntl
 import hashlib
 import json
@@ -10,7 +11,10 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import config
@@ -100,6 +104,53 @@ def validation_fault_ids(count: int) -> list[int]:
     raise ValueError(f"requested {count} validation faults, but only found {len(chosen)}")
 
 
+def record_timing(work: Path, entry: dict) -> None:
+    with (work / "timings.jsonl").open("a") as stream:
+        stream.write(json.dumps({"host": os.uname().nodename, "pid": os.getpid(),
+                                 **entry}) + "\n")
+
+
+@contextmanager
+def measure(work: Path, stage: str, **details):
+    started = time.perf_counter()
+    entry = {"stage": stage, "started_utc": datetime.now(timezone.utc).isoformat(),
+             **details}
+    try:
+        yield entry
+    except BaseException:
+        entry["status"] = "error"
+        raise
+    else:
+        entry["status"] = "ok"
+    finally:
+        entry["elapsed_seconds"] = time.perf_counter() - started
+        record_timing(work, entry)
+
+
+def record_task_timings(work: Path) -> None:
+    """Keep Z01X's per-task times before temporary task files are removed."""
+    for summary in (work / "fcm.dir").rglob("summary.csv"):
+        with summary.open(newline="") as stream:
+            header = None
+            for row in csv.reader(stream):
+                fields = [value.strip() for value in row]
+                if "elapsed time" in fields and "CPU time" in fields:
+                    header = fields
+                    continue
+                if header is None or len(fields) < len(header):
+                    continue
+                values = dict(zip(header, fields))
+                try:
+                    elapsed = float(values["elapsed time"])
+                    cpu = float(values["CPU time"])
+                except (ValueError, KeyError):
+                    continue
+                record_timing(work, {"stage": "z01x_task", "summary": str(summary),
+                    "task": values.get("task"), "testcase": values.get("testcase"),
+                    "faults": values.get("num faults"), "details": values.get("details"),
+                    "elapsed_seconds": elapsed, "cpu_seconds": cpu})
+
+
 def run(command: list[str], cwd: Path, log: Path) -> None:
     """Run one command and save all of its output."""
     # Write to a log because Z01X can print a lot of text.
@@ -107,12 +158,14 @@ def run(command: list[str], cwd: Path, log: Path) -> None:
     if Path(command[0]).name in ("vc_fcc", "vc_fcm"):
         # A shell's connection settings must not redirect a private campaign.
         env = {key: value for key, value in env.items() if not key.startswith("SNPS_FDB_")}
-    with log.open("w") as stream:
-        result = subprocess.run(command, cwd=cwd, env=env,
-                                stdout=stream, stderr=subprocess.STDOUT)
-    # Never turn a tool failure into a low fitness score.
-    if result.returncode:
-        raise RuntimeError(f"command failed with {result.returncode}; see {log}")
+    with measure(cwd, log.stem, executable=str(command[0])) as timing:
+        with log.open("w") as stream:
+            result = subprocess.run(command, cwd=cwd, env=env,
+                                    stdout=stream, stderr=subprocess.STDOUT)
+        timing["returncode"] = result.returncode
+        # Never turn a tool failure into a low fitness score.
+        if result.returncode:
+            raise RuntimeError(f"command failed with {result.returncode}; see {log}")
 
 
 def fault_compiler_identity(path: str) -> dict[str, str]:
@@ -280,7 +333,10 @@ def run_fcm(work: Path, script: Path, log: Path) -> None:
             work, log)
     finally:
         # The exit flag only stops servers that this FCM process started.
-        stop_database(work)
+        try:
+            record_task_timings(work)
+        finally:
+            stop_database(work)
 
 
 def verify_unused_database(work: Path) -> None:
@@ -396,8 +452,10 @@ def probe(binary: Path, work: Path) -> int | None:
     log = work / "probe.log"
     command = [str(config.SIMV), *simulation_args(
         binary, raw_body_address(binary), config.PROBE_MAX_CYCLES)]
-    with log.open("w") as stream:
-        result = subprocess.run(command, cwd=work, stdout=stream, stderr=subprocess.STDOUT)
+    with measure(work, "probe") as timing:
+        with log.open("w") as stream:
+            result = subprocess.run(command, cwd=work, stdout=stream, stderr=subprocess.STDOUT)
+        timing["returncode"] = result.returncode
     text = log.read_text(errors="replace")
     if "*** FAILED ***" in text:
         return None
@@ -661,9 +719,16 @@ def score(
     else:
         work = RUNS / "full" / digest if full else RUNS / digest
     work.mkdir(parents=True, exist_ok=True)
-    with (work / "evaluation.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        return score_locked(source, full, ids, result_group, work, digest)
+    with measure(work, "candidate", source=str(source.resolve()), full=full,
+                 workers=config.WORKERS) as timing:
+        with (work / "evaluation.lock").open("w") as lock:
+            with measure(work, "wait_for_lock"):
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            timing["cache_hit"] = all((work / name).exists() for name in
+                ("summary.rpt", "faults.rpt", "injection-markers.txt"))
+            timing["coverage"] = score_locked(source, full, ids, result_group, work, digest)
+            timing["rejected"] = (work / "rejected.txt").exists()
+            return timing["coverage"]
 
 
 def score_locked(source, full, ids, result_group, work, digest) -> float:
@@ -722,7 +787,8 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
     write_tcl(tcl, binary, ids, report, raw_body_address(binary), max_cycles=max_cycles)
 
     # Copy the same stopped database without inheriting earlier results.
-    copy_campaign(work)
+    with measure(work, "prepare_fdb"):
+        copy_campaign(work)
 
     # Connect to the campaign and simulate only the chosen faults.
     run_fcm(work, tcl, work / "fcm.log")

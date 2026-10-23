@@ -13,8 +13,13 @@ Use a machine with VCS, Z01X, and the Nangate45 files configured for Testyard.
 Install CMake and a C++ compiler, and check that you can access the Git
 submodules. Use VCS and Z01X 2025.06-SP2 to match the supplied configuration.
 
-First install Miniconda, following [README_cad.md](testyard/README_cad.md#setup-instruction-for-testyard-and-hammer-for-the-cads-servers).
-On Linux x86_64, run the following from your home directory and accept the
+Run the long setup and build steps inside tmux:
+
+```bash
+tmux new -s raw
+```
+
+First install Miniconda. On Linux x86_64, run the following and accept the
 default installation path, `$HOME/miniconda3`. Skip this installation if
 `conda --version` already works.
 
@@ -42,8 +47,8 @@ export CVA6_PLATFORM="$PWD"
 
 ./testyard/build-setup.sh --use-lean-conda --cva6-only
 source testyard/env.sh
-python -m pip install -e ./hammer
-python -c 'import hammer.fsim.vc_zoix as p; print(p.__file__)'
+./testyard/.conda-env/bin/python -m pip install -e ./hammer &&
+./testyard/.conda-env/bin/python -c 'import hammer.fsim.vc_zoix as p; print(p.__file__)'
 
 cmake -S microgp/src -B microgp/build \
   -D CMAKE_BUILD_TYPE=RELEASE \
@@ -51,9 +56,9 @@ cmake -S microgp/src -B microgp/build \
 cmake --build microgp/build --target ugp3 --parallel 16
 ```
 
-Use `pip install -e ./hammer` to install this clone's Hammer, including its Z01X
-plugin. Check the path printed by the Python import: it must be inside this
-clone's `hammer/` directory. Run the installation once per clone.
+Use the Python in `testyard/.conda-env` to install Hammer, rather than another
+Python on your `PATH`. Check the path printed by the import: it must be inside this
+clone's `hammer/` directory.
 
 Before building, check these files against your installation. Change only the
 paths or tool versions that differ on your machine:
@@ -62,16 +67,21 @@ paths or tool versions that differ on your machine:
 - `testyard/vlsi/example-tools.yml`: tool versions and executable paths.
 - `testyard/vlsi/technology/nangate45.yml`: the Nangate45 library path and SRAM generator.
 
-With the configured Nangate45 SRAM compiler, also provide OpenROAD and KLayout
-on `PATH`, and set `OPENROAD` to your OpenROAD installation directory.
-
-## 2. Open a session
-
-Use tmux for builds and simulations:
+Install OpenROAD and KLayout in separate Conda environments, using the versions
+from [README_cad.md](testyard/README_cad.md). Also download the OpenROAD repository:
+the Nangate45 SRAM generator needs its library files.
 
 ```bash
-tmux new -s raw
+git clone --recursive https://github.com/The-OpenROAD-Project/OpenROAD.git "$HOME/OpenROAD"
+conda create -c litex-hub -c conda-forge -c defaults --no-channel-priority \
+  --prefix "$HOME/.conda-openroad" openroad=2.0_7070_g0264023b6
+conda create -c litex-hub -c conda-forge -c defaults --no-channel-priority \
+  --prefix "$HOME/.conda-klayout" klayout=0.28.5_98_g87e2def28
 ```
+
+If these are already installed, skip their installation and use their paths below.
+
+## 2. Activate the environment
 
 In each new shell or tmux session, run the block below. Replace the path with
 the location of your clone.
@@ -79,17 +89,23 @@ the location of your clone.
 ```bash
 cd /path/to/cva6-testing-platform
 export CVA6_PLATFORM="$PWD"
-source testyard/env.sh
-
 export RISCV="$CVA6_PLATFORM/testyard/.conda-env/riscv-tools"
-export PATH="$RISCV/bin:$CVA6_PLATFORM/microgp/build/Frontends/ugp3:$PATH"
+export OPENROAD="$HOME/OpenROAD"
+export PATH="$HOME/miniconda3/bin:$HOME/.conda-openroad/bin:$HOME/.conda-klayout/bin:$RISCV/bin:$CVA6_PLATFORM/microgp/build/Frontends/ugp3:$PATH"
+source testyard/env.sh
+export PATH="$CVA6_PLATFORM/testyard/.conda-env/bin:$PATH"
+hash -r
 set -o pipefail
 
-command -v riscv64-unknown-elf-gcc vc_fcc vc_fcm ugp3
+python3 -c 'import sys, hammer.fsim.vc_zoix as p; print(sys.executable); print(p.__file__)'
+command -v riscv64-unknown-elf-gcc vcs vc_fcc vc_fcm ugp3 openroad klayout
 ```
 
-Check that all four tools print a path. If you prefer to keep the tool exports
-in `~/.bashrc`, use the absolute path of your clone.
+Check that all seven tools print a path. Load the EDA tools as required on your
+machine before continuing. Check that Python points to `testyard/.conda-env/bin/`
+and Hammer points inside this clone's `hammer/` directory. If you installed Miniconda elsewhere, adjust its
+path above. If you prefer to keep the tool exports in `~/.bashrc`, use the
+absolute path of your clone.
 
 Detach with **Ctrl+B**, then **D**. Return with `tmux attach -t raw`.
 After each command piped through `tee`, check the printed status. Continue only
@@ -97,10 +113,12 @@ when it is zero.
 
 ## 3. Build the simulator and generate faults
 
-Compile the provided seed, `seed.S`.
+Check generation and compilation before starting the long build, then compile
+the provided seed, `seed.S`. `make smoke` uses dummy fitness values.
 
 ```bash
 cd "$CVA6_PLATFORM/raw-evolution"
+make smoke
 python3 evaluate.py --compile seed.S
 ```
 
@@ -111,6 +129,7 @@ in the following steps.
 ```bash
 cd "$CVA6_PLATFORM/testyard/vlsi"
 make fsim-rtl benchmark=cva6 \
+  HAMMER_D_DEPS= HAMMER_DEPENDENCIES= \
   BINARY="$CVA6_PLATFORM/raw-evolution/runs/compile-check/candidate.riscv" LOADMEM=1 HAMMER_EXTRA_ARGS="--to_step fgen" \
   2>&1 | tee "$HOME/cva6-raw-fgen.log"
 echo "Status: ${PIPESTATUS[0]}"
@@ -118,6 +137,9 @@ echo "Status: ${PIPESTATUS[0]}"
 
 Keep the arguments above to use the compiled seed, load it into memory, select
 the CVA6 strobe and SAF configuration, and stop after generating faults.
+
+Keep `HAMMER_D_DEPS= HAMMER_DEPENDENCIES=` to avoid the observed loop where Make
+keeps rebuilding the Hammer dependencies and rerunning Java/Scala indefinitely.
 
 Before continuing, check that the build produced:
 
@@ -134,10 +156,7 @@ testyard/vlsi/build-nangate45-commercial-cva6/chipyard.harness.TestHarness.CVA6C
 Reuse these outputs when testing different assembly programs.
 
 After changing the RTL, strobe, or fault configuration, replace `fsim-rtl` with
-`redo-fsim-rtl` to run the stage again. If an existing build keeps regenerating
-Hammer or SRAM dependencies, add `HAMMER_D_DEPS= HAMMER_DEPENDENCIES=` to that
-rebuild command. Leave those overrides out of the first build so Make can
-create the required configuration files.
+`redo-fsim-rtl` to run the stage again. Keep both empty overrides in that command.
 
 If you rerun Hammer with the same design, strobe, and fault configuration, add
 this setting to `testyard/vlsi/fsim/example-fsim-cva6-saf.yml` to reuse the
@@ -157,15 +176,12 @@ Run `make campaign` once to compile the SFF into a Z01X database in
 `campaign-base/`. If you already have a matching base, use the same command to
 verify it instead of recompiling.
 
+Then validate injection with four testable faults. The `&&` below prevents
+validation from starting if campaign preparation fails.
+
 ```bash
 cd "$CVA6_PLATFORM/raw-evolution"
-make campaign 2>&1 | tee "$HOME/cva6-raw-campaign.log"
-echo "Status: ${PIPESTATUS[0]}"
-```
-
-Then run the seed with four testable faults:
-
-```bash
+make campaign 2>&1 | tee "$HOME/cva6-raw-campaign.log" &&
 make validate 2>&1 | tee "$HOME/cva6-raw-validate.log"
 echo "Status: ${PIPESTATUS[0]}"
 ```
@@ -191,7 +207,7 @@ detailed report, and injection evidence.
 
 ```bash
 mkdir -p results/axi-seed-baseline
-cp -n runs/full/RUN/{summary.rpt,faults.rpt,injection-markers.txt} \
+cp -n runs/full/RUN/{source.S,summary.rpt,faults.rpt,detected-ids.json,injection-markers.txt} \
   results/axi-seed-baseline/
 ```
 
@@ -208,21 +224,16 @@ This saves `results/fitness-reference.json` and refuses to overwrite an existing
 reference. MicroGP will maximize coverage first, then use detections beyond this
 reference to break ties. Keep the reference unchanged throughout a run.
 
-## 6. Check generation and preserve the original inputs
+## 6. Preserve the original inputs
 
 Keep the original inputs for the final comparison without monitor guidance.
 Every candidate will use the full campaign; do not select a subset.
 
 ```bash
-make smoke
 mkdir -p results/original-inputs
 cp -n seed.S genome.xml population.settings.xml ugp3.settings.xml config.py \
   results/original-inputs/
 ```
-
-Use `make smoke` to verify that MicroGP starts with the exact seed and can
-compile its generated programs. Only smoke uses dummy scores; evolution uses
-real fault simulation.
 
 ## 7. Replay faults with the monitors
 
@@ -335,6 +346,31 @@ submodule first, then commit its updated reference here.
 The imported projects retain their original licences.
 
 ## Troubleshooting
+
+If `make campaign` says the database contains results, do not continue to
+validation. Stop that database's server before replacing `campaign-base/`.
+Keep the existing simulator and SFF; they do not need rebuilding for this error.
+
+Conda packages can require newer system libraries than your machine provides.
+For example, if `config.log` reports `GLIBC_2.34 not found`, check your system
+version with `getconf GNU_LIBC_VERSION`. For GLIBC **2.28**, adjust the sysroot
+and its kernel headers together:
+
+```bash
+conda install -p "$CVA6_PLATFORM/testyard/.conda-env" -c conda-forge \
+  "sysroot_linux-64=2.28" "kernel-headers_linux-64<5.14"
+```
+
+This changes only the project's Conda environment, not the system libraries.
+After it succeeds, resume from the failed build step without recreating the
+environment or fetching the submodules again:
+
+```bash
+cd "$CVA6_PLATFORM"
+source testyard/env.sh
+export RISCV="$CVA6_PLATFORM/testyard/.conda-env/riscv-tools"
+./testyard/build-setup.sh --use-lean-conda --cva6-only -s 1 -s 2
+```
 
 If you hit an error, try loading or unloading the EDA tools as needed on your machine, and check that you installed the required dependencies and versions. If it’s still not resolved, please let me know so I can dive deeper into it.
 This repo is still under development, so I can’t guarantee a seamless setup everywhere yet (I’M TRYING), but at least it works on my machine! XD
