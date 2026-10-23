@@ -27,7 +27,11 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(command[0], "vc_fcm")
         database = cwd / "fdb"
         if "-fdb_mgmt_only" in command:
-            self.assertIn(str(database.resolve()), command[-1])
+            self.assertIn("-tcl_script", command)
+            self.assertNotIn("-tcl", command)
+            script = Path(command[-1]).read_text()
+            self.assertIn(str(database.resolve()), script)
+            self.assertIn("fcm::stop_server", script)
             (database / "postmaster.pid").unlink()
             return
         self.assertEqual(command[command.index("-fdb_path") + 1], str(database.resolve()))

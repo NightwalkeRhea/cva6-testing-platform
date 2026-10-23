@@ -257,8 +257,15 @@ def stop_database(work: Path) -> None:
     if not pid.exists():
         return
     command = f"fcm::stop_server -fdb_storage_path {{{database}}}"
-    run(["vc_fcm", "-fdb_mgmt_only", "-disable_auto_setup", "-tcl",
-         f"if {{[catch {{{command}}} message]}} {{puts stderr $message; exit 1}}"],
+    script = work / "stop-fdb.tcl"
+    script.write_text(
+        f"if {{[catch {{{command}}} message]}} {{\n"
+        "    puts stderr $message\n"
+        "    exit 1\n"
+        "}\n"
+    )
+    run(["vc_fcm", "-fdb_mgmt_only", "-disable_auto_setup", "-tcl_script",
+         str(script.resolve())],
         work, work / "stop-fdb.log")
     if pid.exists():
         raise RuntimeError(f"FDB server still has a PID file: {pid}; preserving database")
