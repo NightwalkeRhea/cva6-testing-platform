@@ -659,8 +659,9 @@ def write_tcl(
 
     # Normal runs keep Z01X's default COATS step, which labels each missed fault
     # as never excited (NC) or excited but never seen at the boundary (NO).
-    # A replay must really simulate its fault, so it skips COATS.
-    fsim_command = "fsim -verbose" if trace_dir is None else "fsim -verbose -no_coats"
+    # Replays and validation skip COATS so only the selected faults get results.
+    fsim_command = ("fsim -verbose" if trace_dir is None and ids is None
+                    else "fsim -verbose -no_coats")
     # Omit -fids only for the final comparison against the complete list.
     if ids is not None:
         selected = " ".join(str(fid) for fid in ids)

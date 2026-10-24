@@ -210,6 +210,16 @@ class EvaluationTests(unittest.TestCase):
         # The unused-database counts come first, in the same FCM launch.
         self.assertLess(text.index("unrun-summary.rpt"), text.index("fsim -verbose"))
 
+    def test_validation_tcl_disables_coats_without_enabling_traces(self):
+        tcl = self.root / "fsim.tcl"
+        with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
+            evaluate.write_tcl(tcl, self.root / "candidate.riscv", [3, 4, 5, 6],
+                               self.root / "summary.rpt", 0x80000290)
+        text = tcl.read_text()
+        self.assertIn("fsim -verbose -no_coats -fids {3 4 5 6}", text)
+        self.assertNotIn("trace_file", text)
+        self.assertIn("unrun-summary.rpt", text)
+
     def test_replay_tcl_traces_one_fault_without_coats(self):
         tcl = self.root / "fsim.tcl"
         with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
