@@ -99,6 +99,22 @@ class EvaluationTests(unittest.TestCase):
                     else:
                         self.assertEqual(evaluate.probe(self.root / "candidate.riscv", self.root), expected)
 
+    def test_lone_seed_gets_all_jobs_and_a_full_batch_one_each(self):
+        for count, jobs in ((1, 16), (5, 3), (16, 1), (20, 1)):
+            with self.subTest(programs=count), \
+                 patch.object(sys, "argv", ["evaluate.py", *[f"p{i}" for i in range(count)]]), \
+                 patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(self.root / "f")}), \
+                 patch.object(evaluate, "score", return_value=1.0) as score:
+                evaluate.main()
+                self.assertEqual({call.kwargs["jobs"] for call in score.call_args_list}, {jobs})
+
+    def test_tcl_uses_the_jobs_it_is_given(self):
+        tcl = self.root / "fsim.tcl"
+        with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
+            evaluate.write_tcl(tcl, self.root / "candidate.riscv", None,
+                               self.root / "summary.rpt", 0x80000290, jobs=16)
+        self.assertIn("set_config -global_max_jobs 16", tcl.read_text())
+
     def test_batch_runs_sixteen_programs_and_keeps_fitness_order(self):
         barrier = threading.Barrier(16, timeout=5)
         sources = [str(self.root / f"program{i}") for i in range(16)]
@@ -106,6 +122,7 @@ class EvaluationTests(unittest.TestCase):
         def score(source, **kwargs):
             self.assertTrue(kwargs["full"])
             self.assertIsNone(kwargs["selected_ids"])
+            self.assertEqual(kwargs["jobs"], 1)
             barrier.wait()
             return float(sources.index(str(source)))
 
@@ -256,8 +273,8 @@ class EvaluationTests(unittest.TestCase):
              patch.object(evaluate, "validation_fault_ids", return_value=[3, 4, 5, 6]), \
              patch.object(evaluate, "score", return_value=100.0) as score:
             self.assertEqual(evaluate.main(), 0)
-        score.assert_called_once_with(Path("seed.S"), full=False,
-                                      selected_ids=[3, 4, 5, 6], result_group="validate")
+        score.assert_called_once_with(Path("seed.S"), full=False, selected_ids=[3, 4, 5, 6],
+                                      result_group="validate", jobs=16)
 
     def test_assembler_syntax_errors_are_recognized(self):
         def failure(command, work, log):

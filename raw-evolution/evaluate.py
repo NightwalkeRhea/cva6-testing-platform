@@ -639,6 +639,7 @@ def write_tcl(
     trace_dir: Path | None = None,
     max_cycles: int | None = None,
     check_unused: bool = True,
+    jobs: int = 1,
 ) -> None:
     """Write the small Tcl script that runs one candidate."""
     # Refuse a stale or hand-written address before simulation starts.
@@ -675,8 +676,8 @@ def write_tcl(
 
     # Keep one test case, one run of the faults, and one final report.
     path.write_text(
-        f"""{unused}# Limit how many jobs Z01X may run at once.
-set_config -global_max_jobs {config.WORKERS}
+        f"""{unused}# Run this many of Z01X's fault tasks at the same time.
+set_config -global_max_jobs {jobs}
 # Run ordinary faults in parallel.
 set_config -fsim_mode {'serial' if trace_dir is not None else 'concurrent'}
 # Print progress every two minutes.
@@ -883,6 +884,7 @@ def score(
     full: bool = True,
     selected_ids: list[int] | None = None,
     result_group: str | None = None,
+    jobs: int = 1,
 ) -> float:
     """Run the full campaign, or explicit IDs for a validation check."""
     if full and selected_ids is not None:
@@ -897,18 +899,19 @@ def score(
         work = RUNS / "full" / digest if full else RUNS / digest
     work.mkdir(parents=True, exist_ok=True)
     with measure(work, "candidate", source=str(source.resolve()), full=full,
-                 workers=config.WORKERS) as timing:
+                 workers=jobs) as timing:
         with (work / "evaluation.lock").open("w") as lock:
             with measure(work, "wait_for_lock"):
                 fcntl.flock(lock, fcntl.LOCK_EX)
             timing["cache_hit"] = all((work / name).exists() for name in
                 ("summary.rpt", "faults.rpt", "injection-markers.txt"))
-            timing["coverage"] = score_locked(source, full, ids, result_group, work, digest)
+            timing["coverage"] = score_locked(source, full, ids, result_group, work, digest,
+                                              jobs)
             timing["rejected"] = (work / "rejected.txt").exists()
             return timing["coverage"]
 
 
-def score_locked(source, full, ids, result_group, work, digest) -> float:
+def score_locked(source, full, ids, result_group, work, digest, jobs=1) -> float:
     report = work / "summary.rpt"
     fault_report = work / "faults.rpt"
     marker_report = work / "injection-markers.txt"
@@ -965,7 +968,7 @@ def score_locked(source, full, ids, result_group, work, digest) -> float:
     with measure(work, "profile"):
         write_profile(binary, work, cycles)
     write_tcl(tcl, binary, ids, report, raw_body_address(binary),
-              max_cycles=fault_cycle_limit(cycles))
+              max_cycles=fault_cycle_limit(cycles), jobs=jobs)
 
     # Copy the same stopped database without inheriting earlier results.
     with measure(work, "prepare_fdb"):
@@ -1068,12 +1071,17 @@ def main() -> int:
     output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
     output.unlink(missing_ok=True)
 
+    # Share the Z01X jobs among the programs that run together. The faults are
+    # split into the same tasks either way, so this changes speed, not results.
+    jobs = max(1, config.Z01X_JOBS // min(len(args.sources), config.EVALUATIONS))
+
     def evaluate_source(source):
         value = score(
             source,
             full=validation_ids is None,
             selected_ids=validation_ids,
             result_group=result_group,
+            jobs=jobs,
         )
         extra = complementary_detections(source, reference)
         print(f"{source}: {value:.2f}%, {extra} beyond reference", flush=True)

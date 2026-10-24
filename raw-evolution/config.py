@@ -46,9 +46,11 @@ DRAMSIM_INI = TESTYARD / "generators/testchipip/src/main/resources/dramsim2_ini"
 # Keep every random choice repeatable.
 SEED = 946094937
 
-# Run 16 candidates at once, each with one Z01X worker.
+# Run up to 16 candidates at once.
 EVALUATIONS = 16
-WORKERS = 1
+# Z01X jobs shared by one batch: the seed alone gets all 16, so its fault
+# tasks run side by side; a full generation of 16 programs gets 1 job each.
+Z01X_JOBS = 16
 
 # Stop a broken candidate that never exits.
 MAX_CYCLES = 10_000_000

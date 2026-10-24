@@ -292,7 +292,7 @@ Run only one evolution in this directory to avoid sharing MicroGP's output
 files between runs. Keep the seed, genome, settings, and evaluator unchanged
 until it finishes.
 
-Allow up to 16 candidates to run together, with one Z01X worker each. Before
+Allow up to 16 candidates to run together, sharing 16 Z01X jobs. Before
 fault simulation, each candidate must compile and pass a clean simulation.
 
 You can run replay and evolution in separate tmux sessions if resources and
