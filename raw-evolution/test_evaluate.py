@@ -229,6 +229,16 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unattempted"):
             evaluate.parse_full_coverage(report)
 
+    def test_failed_batch_leaves_no_old_scores_for_microgp(self):
+        output = self.root / "fitness.output"
+        output.write_text("100.000000000000 0\n")
+        with patch.object(sys, "argv", ["evaluate.py", "seed.S"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output)}), \
+             patch.object(evaluate, "score", side_effect=RuntimeError("command failed with 127")):
+            with self.assertRaises(RuntimeError):
+                evaluate.main()
+        self.assertFalse(output.exists())
+
     def test_validation_still_selects_four_faults(self):
         output = self.root / "fitness.output"
         with patch.object(sys, "argv", ["evaluate.py", "--validate-faults", "4", "seed.S"]), \

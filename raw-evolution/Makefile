@@ -57,6 +57,8 @@ smoke:
 evolve:
 	@test -n "$(RUN)" || { echo 'usage: make evolve RUN=name'; false; }
 	@test -f seed.S || { echo 'missing seed.S'; false; }
+	@test -f results/fitness-reference.json || \
+	  { echo 'freeze a reference first: python3 evaluate.py --set-reference PATH/faults.rpt'; false; }
 	@test ! -e "$(OUT)" || { echo "$(OUT) already exists; choose a new RUN"; false; }
 	@# Leftovers would mix an older run into this one.
 	@for file in individual* status.xml BEST_raw; do test ! -e "$$file" || \

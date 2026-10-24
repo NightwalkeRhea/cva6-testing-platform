@@ -94,6 +94,10 @@ def check() -> None:
     for tool in ("vc_fcc", "vc_fcm"):
         if shutil.which(tool) is None:
             raise FileNotFoundError(f"tool not found on PATH: {tool}")
+    # The vc_fcm on PATH is a wrapper that runs $VCS_HOME/bin/vc_fcm; without
+    # the Synopsys module loaded it fails with exit code 127.
+    require(Path(os.environ.get("VCS_HOME", "/missing-VCS_HOME")) / "bin/vc_fcm",
+            "vc_fcm under $VCS_HOME (load the Synopsys module)")
 
 
 def validation_fault_ids(count: int) -> list[int]:
@@ -1058,6 +1062,11 @@ def main() -> int:
 
     reference = load_reference(args.require_reference) if validation_ids is None else None
 
+    # Delete the previous batch's scores first. If this batch fails, MicroGP
+    # must find no file, not old scores that it would give to these programs.
+    output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
+    output.unlink(missing_ok=True)
+
     def evaluate_source(source):
         value = score(
             source,
@@ -1073,9 +1082,7 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=config.EVALUATIONS) as pool:
         values = list(pool.map(evaluate_source, args.sources))
 
-    # MicroGP tells us where to place the fitness values.
-    # Use a local file when the variable is absent.
-    output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
+    # Write the scores only after every program succeeded.
     output.write_text("".join(f"{coverage:.12f} {extra}\n" for coverage, extra in values))
 
     # make evolve sets RAW_MANIFEST so every candidate of the run is listed.
