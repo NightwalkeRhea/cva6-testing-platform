@@ -426,17 +426,40 @@ def copy_campaign(work: Path) -> None:
             work, work / "copy-fdb.log")
 
 
+def write_linker_script(work: Path) -> Path:
+    """Keep normal data below HTIF instead of relocating everything after it."""
+    text = config.LINKER.read_text()
+    text, count = re.subn(r"(?m)^[ \t]*\.htif\b[^{}]*\{[^{}]*\}", "", text)
+    if count != 1 or not re.search(r"\}\s*$", text):
+        raise RuntimeError(f"expected one .htif block in {config.LINKER}; refusing to guess its layout")
+    # Newlib uses sections such as .data._impure_data; do not leave them orphaned.
+    text = text.replace("*(.data)", "*(.data .data.*)")
+    end = text.rfind("}")
+    section = f"""
+    ASSERT(MAX(_end, __heap_end) <= 0x{config.HTIF_ADDRESS:x},
+           "RAW memory overlaps HTIF")
+    ASSERT(__stack_start + __stack_size <= 0x{config.HTIF_ADDRESS:x},
+           "RAW memory overlaps HTIF")
+    .htif 0x{config.HTIF_ADDRESS:x} : {{
+        KEEP(*(.htif .htif.*))
+    }}
+    ASSERT(SIZEOF(.htif) <= 0x1000, "RAW HTIF exceeds uncached page")
+"""
+    path = work / "candidate.ld"
+    path.write_text(text[:end] + section + text[end:])
+    return path
+
+
 def compile_program(source: Path, work: Path) -> Path:
     """Link one generated assembly file with the small C harness."""
     binary = work / "candidate.riscv"
+    linker = write_linker_script(work)
 
     # Match the flags used by the other bare-metal CVA6 tests.
     command = [
         str(config.CC),
         "-O2", "-static", "-march=rv64imafd", "-mabi=lp64d", "-mcmodel=medany",
-        "-specs=htif_nano.specs", "-T", str(config.LINKER),
-        # Put tohost/fromhost at the one address the hardware leaves uncached.
-        f"-Wl,--section-start=.htif=0x{config.HTIF_ADDRESS:x}",
+        "-specs=htif_nano.specs", "-T", str(linker),
         str(HERE / "harness.c"),
         # MicroGP produces names such as "individual0" without a .S suffix.
         # Tell GCC that this input is assembly instead of relying on its name.
@@ -450,6 +473,8 @@ def compile_program(source: Path, work: Path) -> Path:
         text = log.read_text(errors="replace")
         if "Assembler messages:" in text and re.search(r"\bError:", text):
             raise InvalidProgram(f"assembly rejected; see {log}") from error
+        if "RAW memory overlaps HTIF" in text or "RAW HTIF exceeds uncached page" in text:
+            raise InvalidProgram(f"program overlaps the HTIF page; see {log}") from error
         raise
     check_htif(binary)
     return binary
@@ -465,6 +490,8 @@ def check_htif(binary: Path) -> None:
                for fields in map(str.split, result.stdout.splitlines()) if len(fields) >= 3}
     if symbols.get("tohost") != config.HTIF_ADDRESS:
         raise RuntimeError(f"tohost is not at 0x{config.HTIF_ADDRESS:x} in {binary}")
+    if not config.HTIF_ADDRESS <= symbols.get("fromhost", -1) <= config.HTIF_ADDRESS + 0x1000 - 8:
+        raise RuntimeError(f"fromhost is outside the uncached HTIF page in {binary}")
     # The linker does not check the heap and stack, so check that they end below the page.
     stack_end = symbols["__stack_start"] + symbols["__stack_size"]
     if max(symbols["_end"], stack_end) > config.HTIF_ADDRESS:

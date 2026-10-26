@@ -77,6 +77,17 @@ other program run on this build (for example the testyard `vlsi` fsim flow)
 must also be linked with `-Wl,--section-start=.htif=0x80100000`, or its
 tohost/fromhost will be cached.
 
+Correction (Codex, 26 October): the section-start flag alone is not safe.
+Cattivo showed `.data._impure_data` at 0x80100010 and `_end` at 0x80100440:
+the old script puts `.htif` before normal data, so moving it moves data too.
+`compile_program()` now generates `candidate.ld` in each run from the existing
+script. It puts `.htif` last at 0x80100000, collects `.data.*` with normal data,
+and asserts that the stack stays below the page and HTIF fits inside it.
+It no longer passes `--section-start`. `check_htif()` also checks `fromhost`.
+The shared Testyard script and RTL are unchanged. Local GNU ld tests pass;
+compiling the real seed on cattivo is still required. Other programs must use
+an equivalent layout, not blindly apply the old section-start command.
+
 2. The profile names the wrong instruction as the producer.
 
 In the supplied `profile.json`, `ld t0` at `0x800002b4` is immediately followed
@@ -217,3 +228,30 @@ counts as "forward" only when the monitor saw a RAW hazard at issue, and in
 this run that only happens after waiting for a load. Check again after
 problem 1 is settled. If it is still always "stalled", drop it from the
 events so the LLM does not read meaning into it.
+
+Flow check before the rebuild (Claude, 26 October)
+
+Only RTL/Scala mistakes force a rebuild; Python mistakes do not. So check
+the build in this order, and stop at the first failure:
+1. Build only `simv`. Open `cva6_config_pkg.sv`: 2 cached regions, the
+   second one starting at 0x80101000.
+2. Compile the seed: `objdump -t candidate.riscv | grep host` shows `tohost`
+   at 0x80100000 (`check_htif()` also stops otherwise).
+3. Clean-run the seed with traces. It must print PASSED (proves HTIF works
+   with caches on and `+loadmem` loads the moved section).
+4. In `dependency.csv`: ALU pairs now show forwarding, and the `ld t0` ->
+   `addi` pair has the load's ID as producer, with `rs1_producer_valid` 1.
+5. Only then: new fault list, `make campaign`, seed evaluation, reference,
+   `make evolve`.
+A failure in 1-4 costs only a `simv` rebuild, not a fault campaign.
+
+Checked and fine: the strobe has no fixed addresses (it uses `+raw_body_pc`
+and observes the core boundary); nothing else in `raw-evolution` or
+`testyard/vlsi` uses the old tohost address; the D-cache is write-through
+(`dCacheType = "WT"`), so stores and the signature still reach AXI;
+`CVA6Config` does not enable `WithToFromHostCaching`.
+Expected change, not a bug: with caches on, loads and fetches mostly stay
+inside the core, so fewer faults reach AXI. Coverage will not be comparable
+with the old baseline; it is replaced anyway.
+`SuperscalarEn` is 0, so there is one issue port: the `port` field in the
+events is always 0 and can be dropped with problem 3.

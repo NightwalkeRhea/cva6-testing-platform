@@ -199,7 +199,8 @@ class EvaluationTests(unittest.TestCase):
         def failure(command, work, log):
             log.write_text("cannot find htif_nano.specs")
             raise RuntimeError("compiler failed")
-        with patch.object(evaluate, "run", side_effect=failure):
+        with patch.object(evaluate, "write_linker_script", return_value=self.root / "candidate.ld"), \
+             patch.object(evaluate, "run", side_effect=failure):
             with self.assertRaises(RuntimeError) as error:
                 evaluate.compile_program(self.root / "seed.S", self.root)
         self.assertNotIsInstance(error.exception, evaluate.InvalidProgram)
@@ -207,7 +208,7 @@ class EvaluationTests(unittest.TestCase):
     def test_htif_must_be_pinned_and_clear_of_the_program(self):
         def nm(tohost, stack_start):
             # nm output in the format of the real candidate on cattivo.
-            text = (f"{tohost:016x} D tohost\n0000000080002240 B _end\n"
+            text = (f"{tohost:016x} D tohost\n{tohost + 8:016x} D fromhost\n0000000080002240 B _end\n"
                     f"{stack_start:016x} B __stack_start\n0000000000008000 A __stack_size\n")
             return subprocess.CompletedProcess([], 0, text, "")
 
@@ -298,9 +299,94 @@ class EvaluationTests(unittest.TestCase):
         def failure(command, work, log):
             log.write_text("bad.S: Assembler messages:\nbad.S:4: Error: unrecognized opcode")
             raise RuntimeError("compiler failed")
-        with patch.object(evaluate, "run", side_effect=failure):
+        with patch.object(evaluate, "write_linker_script", return_value=self.root / "candidate.ld"), \
+             patch.object(evaluate, "run", side_effect=failure):
             with self.assertRaises(evaluate.InvalidProgram):
                 evaluate.compile_program(self.root / "bad.S", self.root)
+
+    @unittest.skipUnless(all(shutil.which(tool) for tool in ("as", "ld", "nm")), "GNU tools unavailable")
+    def test_linker_keeps_data_and_stack_below_the_separate_htif_page(self):
+        # Exercise GNU ld's real section placement, not mocked symbol output.
+        # Host assembly is enough: this tests the linker layout, not RISC-V execution.
+        original = self.root / "original.ld"
+        original.write_text("""ENTRY(_start)
+SECTIONS {
+  . = 0x80000000;
+  PROVIDE(__stack_size_min = 24K);
+  .text : { *(.text) }
+  .tdata : { PROVIDE_HIDDEN(__tdata_start = .); *(.tdata) }
+  .tbss (NOLOAD) : { *(.tbss) PROVIDE_HIDDEN(__tbss_end = .); }
+  .htif ALIGN(0x40) : { *(.htif) }
+  .data : ALIGN(8) { *(.data) }
+  .bss : ALIGN(8) { *(.bss) }
+  PROVIDE(_end = .);
+  PROVIDE(__heap_size = 128K);
+  . += __heap_size;
+  . = ALIGN(4K);
+  PROVIDE(__heap_end = .);
+  PROVIDE(__tcb_size = __tbss_end - __tdata_start);
+  PROVIDE(__stack_align = MAX(ALIGNOF(.tdata), 0x10));
+  PROVIDE(__stack_start = ALIGN(__stack_align));
+  PROVIDE(__stack_shift = LOG2CEIL(ALIGN(__stack_size_min + __tcb_size, __stack_align)));
+  PROVIDE(__stack_size = 1 << __stack_shift);
+}
+""")
+        assembly = self.root / "layout.s"
+        assembly.write_text(""".section .text
+.global _start
+_start: .byte 0
+.section .htif,"aw"
+.global tohost,fromhost
+tohost: .quad 0
+fromhost: .quad 0
+.section .data._impure_data,"aw"
+.global ordinary_data
+ordinary_data: .quad 1
+.section .bss,"aw",@nobits
+.space 64
+""")
+        obj = self.root / "layout.o"
+        subprocess.run(["as", "-o", str(obj), str(assembly)], check=True, capture_output=True)
+        original_bytes = original.read_bytes()
+        with patch.object(evaluate.config, "LINKER", original):
+            linker = evaluate.write_linker_script(self.root)
+        self.assertEqual(original.read_bytes(), original_bytes)
+        binary = self.root / "layout.elf"
+        linked = subprocess.run(["ld", "-T", str(linker), "-o", str(binary), str(obj)],
+                                capture_output=True, text=True)
+        self.assertEqual(linked.returncode, 0, linked.stderr)
+        with patch.object(evaluate.config, "NM", Path(shutil.which("nm"))):
+            evaluate.check_htif(binary)
+        output = subprocess.check_output(["nm", str(binary)], text=True)
+        symbols = {fields[-1]: int(fields[0], 16) for fields in map(str.split, output.splitlines())}
+        self.assertEqual(symbols["tohost"], evaluate.config.HTIF_ADDRESS)
+        self.assertEqual(symbols["fromhost"], evaluate.config.HTIF_ADDRESS + 8)
+        self.assertLess(symbols["ordinary_data"], evaluate.config.HTIF_ADDRESS)
+        self.assertLess(symbols["__stack_start"] + symbols["__stack_size"], evaluate.config.HTIF_ADDRESS)
+        # Real linker assertions reject heap/stack overlap and oversized HTIF.
+        generated_text = linker.read_text()
+        for text in (generated_text.replace("__heap_size = 128K", "__heap_size = 2M"),
+                     generated_text.replace("KEEP(*(.htif .htif.*))", "KEEP(*(.htif .htif.*)) . += 0x1000;")):
+            linker.write_text(text)
+            result = subprocess.run(["ld", "-T", str(linker), "-o", str(binary), str(obj)],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("RAW", result.stderr)
+
+    def test_linker_refuses_an_unrecognized_template(self):
+        original = self.root / "original.ld"
+        original.write_text("SECTIONS { .text : { *(.text) } }\n")
+        with patch.object(evaluate.config, "LINKER", original):
+            with self.assertRaisesRegex(RuntimeError, "expected one .htif block"):
+                evaluate.write_linker_script(self.root)
+
+    def test_htif_rejects_fromhost_outside_the_uncached_page(self):
+        symbols = ("0000000080100000 D tohost\n0000000080200000 D fromhost\n"
+                   "0000000080002240 B _end\n0000000080023000 B __stack_start\n"
+                   "0000000000008000 A __stack_size\n")
+        with patch.object(evaluate.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, symbols, "")):
+            with self.assertRaisesRegex(RuntimeError, "fromhost is outside"):
+                evaluate.check_htif(self.root / "candidate.riscv")
 
     def full_report(self, name, statuses):
         work = self.root / name
