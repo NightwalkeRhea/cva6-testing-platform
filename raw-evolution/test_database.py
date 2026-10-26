@@ -90,6 +90,19 @@ class DatabaseTests(unittest.TestCase):
                 evaluate.remove_run_data(self.base)
         self.assertTrue(pid.exists())
 
+    def test_cleanup_ignores_files_the_server_already_deleted(self):
+        (self.base / "fdb").mkdir(exist_ok=True)
+
+        def vanish(path, onerror):
+            # The server removed this file just before rmtree reached it.
+            onerror(evaluate.os.unlink, "postmaster.host", (FileNotFoundError, FileNotFoundError(), None))
+            with self.assertRaises(PermissionError):
+                onerror(evaluate.os.unlink, "data", (PermissionError, PermissionError(), None))
+
+        with patch.object(evaluate.shutil, "rmtree", side_effect=vanish) as rmtree:
+            evaluate.remove_run_data(self.base)
+        rmtree.assert_called_once()
+
     def test_inherited_database_connection_is_removed(self):
         with patch.dict(evaluate.os.environ, {"SNPS_FDB_SERVER": "other:1234"}), \
              patch.object(evaluate.subprocess, "run") as process:

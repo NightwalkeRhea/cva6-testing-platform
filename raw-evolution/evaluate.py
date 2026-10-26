@@ -390,11 +390,17 @@ def verify_unused_database(work: Path) -> None:
 def remove_run_data(work: Path) -> None:
     """Remove database files from an earlier or completed attempt."""
     stop_database(work)
+
+    def ignore_vanished(function, path, error):
+        # A stopping server may still delete its own files (postmaster.host); that is fine.
+        if not isinstance(error[1], FileNotFoundError):
+            raise error[1]
+
     # Only remove database files after its server has stopped.
     for name in ("fdb", "fcm.dir", "fcm_tsim_fsdb"):
         path = work / name
         if path.is_dir():
-            shutil.rmtree(path)
+            shutil.rmtree(path, onerror=ignore_vanished)
 
 
 def copy_campaign(work: Path) -> None:
