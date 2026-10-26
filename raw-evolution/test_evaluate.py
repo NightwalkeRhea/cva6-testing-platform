@@ -204,6 +204,24 @@ class EvaluationTests(unittest.TestCase):
                 evaluate.compile_program(self.root / "seed.S", self.root)
         self.assertNotIsInstance(error.exception, evaluate.InvalidProgram)
 
+    def test_htif_must_be_pinned_and_clear_of_the_program(self):
+        def nm(tohost, stack_start):
+            # nm output in the format of the real candidate on cattivo.
+            text = (f"{tohost:016x} D tohost\n0000000080002240 B _end\n"
+                    f"{stack_start:016x} B __stack_start\n0000000000008000 A __stack_size\n")
+            return subprocess.CompletedProcess([], 0, text, "")
+
+        with patch.object(evaluate.subprocess, "run", return_value=nm(0x80100000, 0x80023000)):
+            evaluate.check_htif(self.root / "candidate.riscv")
+        # The link flag was ignored: tohost stayed where the linker script put it.
+        with patch.object(evaluate.subprocess, "run", return_value=nm(0x80001e00, 0x80023000)):
+            with self.assertRaisesRegex(RuntimeError, "tohost is not at"):
+                evaluate.check_htif(self.root / "candidate.riscv")
+        # The stack would run into the uncached page.
+        with patch.object(evaluate.subprocess, "run", return_value=nm(0x80100000, 0x800fc000)):
+            with self.assertRaises(evaluate.InvalidProgram):
+                evaluate.check_htif(self.root / "candidate.riscv")
+
     def test_default_score_uses_the_full_campaign_without_a_csv(self):
         with patch.object(evaluate, "RUNS", self.root), \
              patch.object(evaluate, "evaluation_digest", return_value="complete") as digest, \
@@ -394,6 +412,7 @@ class EvaluationTests(unittest.TestCase):
         with patch.object(evaluate.config, "SFF", sff), \
              patch.object(evaluate, "RUNS", self.root), \
              patch.object(evaluate, "evaluation_digest", return_value="candidate"), \
+             patch.object(evaluate, "campaign_fingerprint", return_value={"build": "same"}), \
              patch.object(evaluate, "prepare", return_value=(work, work / "fsim.tcl")), \
              patch.object(evaluate, "probe", return_value=100000), \
              patch.object(evaluate, "write_profile"), \
@@ -474,13 +493,22 @@ class EvaluationTests(unittest.TestCase):
         databases = {call.args[0].name: call.kwargs["database"] for call in run_fcm.call_args_list}
         self.assertEqual(databases, {"fid-1": root / "stream-0/fdb", "fid-2": root / "stream-1/fdb"})
 
-    def test_replay_reuses_the_clean_traces_from_evaluation(self):
-        work = self.root / "full/evaluated"
-        work.mkdir(parents=True)
-        (work / "profile.json").write_text("{}")
+    def saved_clean_run(self, name, build):
+        # A finished evaluation folder, made by simulator build `build`.
+        work = self.root / "full" / name
+        (work / "clean").mkdir(parents=True)
+        for path in ("profile.json", "candidate.riscv", "clean/dependency.csv.gz",
+                     "clean/raw-checker.csv.gz"):
+            (work / path).write_text("")
+        (work / "detected-ids.json").write_text(json.dumps({"campaign": {"format": 2, "build": build}}))
         (work / "probe.log").write_text("CVA6 RAW: injecting faults\n"
                                         "*** PASSED *** Completed after 4000 simulation cycles\n")
+        return work
+
+    def test_replay_reuses_the_clean_traces_from_evaluation(self):
+        work = self.saved_clean_run("evaluated", "A")
         with patch.object(replay.evaluate, "RUNS", self.root), \
+             patch.object(replay.evaluate, "campaign_fingerprint", return_value={"format": 2, "build": "A"}), \
              patch.object(replay.evaluate, "evaluation_digest", return_value="evaluated"), \
              patch.object(replay.evaluate, "compile_program") as build, \
              patch.object(replay.evaluate, "run") as simulate:
@@ -489,13 +517,32 @@ class EvaluationTests(unittest.TestCase):
         build.assert_not_called()
         simulate.assert_not_called()
 
+    def test_replay_reuses_the_folder_it_is_given_after_the_evaluator_changed(self):
+        # The run's folder name no longer matches a recomputed digest.
+        work = self.saved_clean_run("from-manifest", "A")
+        with patch.object(replay.evaluate, "campaign_fingerprint", return_value={"format": 2, "build": "A"}), \
+             patch.object(replay.evaluate, "evaluation_digest", return_value="changed"), \
+             patch.object(replay.evaluate, "compile_program") as build:
+            result = replay.clean_traces(self.root / "source.S", self.root, work)
+        self.assertEqual(result, (work / "clean", work / "candidate.riscv", 4000))
+        build.assert_not_called()
+
+    def test_replay_runs_clean_again_after_a_simulator_rebuild(self):
+        # Old clean traces must not be compared with faulty runs of a new build.
+        work = self.saved_clean_run("old-build", "A")
+        with patch.object(replay.evaluate, "campaign_fingerprint", return_value={"format": 2, "build": "B"}), \
+             patch.object(replay.evaluate, "compile_program", side_effect=RuntimeError("fresh run")):
+            with self.assertRaisesRegex(RuntimeError, "fresh run"):
+                replay.clean_traces(self.root / "source.S", self.root, work)
+
     def dependency_trace(self, path, rows):
         header = ("cycle,issue_port,pc,instruction,consumer_id,fu,operation,rs1,rs2,"
                   "rs1_has_raw,rs2_has_raw,rs1_producer_id,rs2_producer_id,rs1_ready,rs2_ready,"
                   "rs1_forwarded,rs2_forwarded,rs1_source,rs2_source,same_cycle_dep_rs1,"
                   "same_cycle_dep_rs2,same_cycle_bypass_rs1,same_cycle_bypass_rs2,raw_stall_rs1,"
                   "raw_stall_rs2,structural_stall,external_stall,issue_accepted,flush,"
-                  "accepted_order,operand_a,operand_b,raw_matches_rs1,raw_matches_rs2").split(",")
+                  "accepted_order,operand_a,operand_b,raw_matches_rs1,raw_matches_rs2,"
+                  "rs1_producer_valid,rs2_producer_valid").split(",")
         lines = [",".join(header)]
         for values in rows:
             lines.append(",".join(str(values.get(name, 0)) for name in header))
@@ -511,7 +558,7 @@ class EvaluationTests(unittest.TestCase):
             {"pc": "104", "consumer_id": 2, "fu": 3, "rs1_has_raw": 1, "rs1_producer_id": 1,
              "rs1_source": 8, "raw_stall_rs1": 1},
             {"pc": "104", "consumer_id": 2, "fu": 3, "rs1_has_raw": 1, "rs1_producer_id": 1,
-             "rs1_source": 1, "issue_accepted": 1, "accepted_order": 3},
+             "rs1_producer_valid": 1, "rs1_source": 1, "issue_accepted": 1, "accepted_order": 3},
         ])
         (clean / "raw-checker.csv").write_text("cycle\n")
         body = {0x100: "addi t0,a0,17", 0x104: "xor t1,t0,a0"}
@@ -530,6 +577,142 @@ class EvaluationTests(unittest.TestCase):
         self.assertFalse((clean / "dependency.csv").exists())
         with evaluate.open_trace(clean / "dependency.csv") as stream:
             self.assertIn("consumer_id", stream.readline())
+
+    def test_profile_distinguishes_invalid_zero_from_real_producer_zero(self):
+        clean = self.root / "clean"
+        clean.mkdir()
+        self.dependency_trace(clean / "dependency.csv", [
+            {"pc": "100", "consumer_id": 0, "fu": 1, "issue_accepted": 1, "accepted_order": 1},
+            {"pc": "104", "consumer_id": 1, "fu": 3, "rs1_producer_id": 0,
+             "rs1_source": 1, "issue_accepted": 1, "accepted_order": 2},
+            {"pc": "108", "consumer_id": 2, "fu": 3, "rs1_producer_id": 0,
+             "rs1_producer_valid": 1, "rs1_source": 1, "issue_accepted": 1, "accepted_order": 3},
+        ])
+        (clean / "raw-checker.csv").write_text("cycle\n")
+        body = {0x100: "ld t0,0(sp)", 0x104: "addi t1,t0,31", 0x108: "xor t2,t0,a0"}
+        with patch.object(evaluate, "disassemble", return_value=body):
+            evaluate.write_profile(self.root / "candidate.riscv", self.root, 100)
+        profile = json.loads((self.root / "profile.json").read_text())
+        self.assertEqual(profile["format"], 2)
+        invalid, valid = profile["instructions"][1:]
+        self.assertEqual(invalid["rs1_producers"], {})
+        self.assertEqual(invalid["unattributed_forwarding"], {"rs1: monitor found no producer": 1})
+        self.assertEqual(valid["rs1_producers"], {"0x100 ld t0,0(sp) (LOAD, distance 2)": 1})
+        self.assertEqual(len(profile["events"]), 1)
+
+    def test_profile_uses_latest_instruction_after_scoreboard_id_reuse(self):
+        clean = self.root / "clean"
+        clean.mkdir()
+        self.dependency_trace(clean / "dependency.csv", [
+            {"pc": "100", "consumer_id": 1, "fu": 3, "issue_accepted": 1, "accepted_order": 1},
+            {"pc": "104", "consumer_id": 1, "fu": 1, "issue_accepted": 1, "accepted_order": 9},
+            {"pc": "108", "consumer_id": 2, "fu": 3, "rs1_producer_id": 1,
+             "rs1_producer_valid": 1, "rs1_source": 1, "issue_accepted": 1, "accepted_order": 10},
+        ])
+        (clean / "raw-checker.csv").write_text("cycle\n")
+        with patch.object(evaluate, "disassemble", return_value={0x104: "ld t0,0(sp)", 0x108: "addi t1,t0,31"}):
+            evaluate.write_profile(self.root / "candidate.riscv", self.root, 100)
+        profile = json.loads((self.root / "profile.json").read_text())
+        self.assertEqual(profile["instructions"][1]["rs1_producers"],
+                         {"0x104 ld t0,0(sp) (LOAD, distance 1)": 1})
+
+    def test_profile_clears_stalls_but_keeps_issued_producers_on_flush(self):
+        clean = self.root / "clean"
+        clean.mkdir()
+        self.dependency_trace(clean / "dependency.csv", [
+            {"pc": "100", "consumer_id": 0, "fu": 1, "issue_accepted": 1, "accepted_order": 1},
+            {"pc": "104", "consumer_id": 1, "raw_stall_rs1": 1},
+            {"pc": "104", "consumer_id": 1, "flush": 1},
+            {"pc": "104", "consumer_id": 1, "rs1_producer_id": 0, "rs1_producer_valid": 1,
+             "rs1_source": 1, "issue_accepted": 1, "accepted_order": 2},
+        ])
+        (clean / "raw-checker.csv").write_text("cycle\n")
+        with patch.object(evaluate, "disassemble", return_value={0x100: "ld t0,0(sp)",
+                                                               0x104: "addi t1,t0,31"}):
+            evaluate.write_profile(self.root / "candidate.riscv", self.root, 100)
+        profile = json.loads((self.root / "profile.json").read_text())
+        self.assertEqual(profile["events"][0]["stall"], "no stall")
+        consumer = profile["instructions"][1]
+        self.assertEqual(consumer["rs1_producers"], {"0x100 ld t0,0(sp) (LOAD, distance 1)": 1})
+        self.assertEqual(consumer["unattributed_forwarding"], {})
+
+    def test_profile_rejects_old_trace_without_producer_validity(self):
+        clean = self.root / "clean"
+        clean.mkdir()
+        (clean / "dependency.csv").write_text("cycle,pc,rs1_producer_id\n")
+        with patch.object(evaluate, "disassemble", return_value={}):
+            with self.assertRaisesRegex(RuntimeError, "old producer IDs are unreliable"):
+                evaluate.write_profile(self.root / "candidate.riscv", self.root, 100)
+
+    @unittest.skipUnless(shutil.which("verilator"), "Verilator is not installed")
+    def test_monitor_follows_writeback_then_scoreboard_priority(self):
+        rtl = (Path(evaluate.__file__).resolve().parent.parent /
+               "testyard/generators/cva6/src/main/resources/cva6/vsrc/cva6/core/issue_read_operands.sv").read_text()
+        declarations = rtl.split("  // These masks retain", 1)[1].split("\n", 1)[1].split(
+            "  // synthesis translate_on", 1)[0]
+        observer = rtl.split("  always_comb begin : life_story_classify", 1)[1].split(
+            "  // Count cycles", 1)[0]
+        bench = self.root / "monitor_check.sv"
+        bench.write_text("""
+package ariane_pkg; localparam int REG_ADDR_SIZE = 5; endpackage
+module monitor_check;
+  typedef struct packed {
+    int NrIssuePorts, NR_SB_ENTRIES, NrWbPorts, TRANS_ID_BITS;
+    bit FpPresent;
+  } cfg_t;
+  localparam cfg_t CVA6Cfg = '{1, 8, 2, 3, 0};
+  localparam int STORE=2, CTRL_FLOW=4, ACCEL=10;
+  typedef struct packed {logic [4:0] rd; logic [7:0] op;} entry_t;
+  typedef struct packed {logic [2:0] trans_id;} wb_t;
+  typedef struct packed {entry_t [7:0] sbe; wb_t [1:0] wb;} fwd_t;
+  typedef struct packed {
+    logic use_zimm, use_pc, use_imm;
+    logic [7:0] op;
+    logic [3:0] fu;
+  } instr_t;
+  fwd_t fwd_i;
+  instr_t [0:0] issue_instr_i;
+  logic [0:0][9:0] rs1_fwd_req, rs2_fwd_req;
+  logic [0:0] rs1_has_raw, rs2_has_raw, rs1_valid, rs2_valid;
+  function automatic bit is_rd_fpr(input logic [7:0] op); return 0; endfunction
+  function automatic bit is_rs2_fpr(input logic [7:0] op); return 0; endfunction
+  // These masks retain
+""" + declarations + "\n  always_comb begin : life_story_classify" + observer + """
+  initial begin
+    fwd_i='0; issue_instr_i='0; rs1_fwd_req='0; rs2_fwd_req='0;
+    rs1_has_raw=1; rs2_has_raw=1; rs1_valid=1; rs2_valid=1;
+    fwd_i.wb[0].trans_id=1; rs1_fwd_req[0][0]=1;
+    #1;
+    assert(life_rs1_found[0] && life_rs1_producer[0]==1);
+    assert(life_rs1_matches[0]==8'h02);
+    // Direct WB wins over a ready scoreboard entry and another WB port.
+    fwd_i.wb[0].trans_id=7; fwd_i.wb[1].trans_id=5;
+    rs1_fwd_req[0][1]=1; rs1_fwd_req[0][3]=1; rs2_fwd_req[0][1]=1;
+    #1;
+    assert(life_rs1_producer[0]==7 && life_rs2_producer[0]==5);
+    assert(life_rs1_matches[0]==8'ha2);
+    // Scoreboard entry zero is a legitimate producer, not "not found".
+    rs1_fwd_req='0; rs1_fwd_req[0][2]=1;
+    #1;
+    assert(life_rs1_found[0] && life_rs1_producer[0]==0);
+    rs1_fwd_req='0;
+    #1;
+    assert(!life_rs1_found[0]);
+    rs1_fwd_req[0][0]=1; issue_instr_i[0].use_zimm=1;
+    #1;
+    assert(!life_rs1_found[0] && life_rs1_source[0]==10);
+    $display("Monitor attribution checks passed");
+    $finish;
+  end
+endmodule
+""")
+        build = subprocess.run(["verilator", "--binary", "--timing", "--assert", "-Wno-fatal",
+                                "--top-module", "monitor_check", "--Mdir", str(self.root / "obj"),
+                                str(bench)], capture_output=True, text=True)
+        self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+        result = subprocess.run([str(self.root / "obj/Vmonitor_check")], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Monitor attribution checks passed", result.stdout)
 
     def test_manifest_lists_every_candidate_of_the_batch(self):
         manifest = self.root / "manifest.jsonl"
@@ -594,7 +777,8 @@ class EvaluationTests(unittest.TestCase):
         self.assertIn({"operand": "rs2", "producer_unit": "ALU", "distance": "1",
                        "port": 0, "stall": "no stall"}, report["events_never_seen"])
         # Only the best program's excited-but-missed faults are replayed.
-        replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays")
+        replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays",
+                                        self.root / "runs/full/B")
 
     def test_run_report_gets_an_absolute_path(self):
         # make report passes results/NAME, relative to raw-evolution.

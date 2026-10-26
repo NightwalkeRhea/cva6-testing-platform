@@ -71,11 +71,21 @@ def passed_cycles(log: Path) -> int | None:
     return int(passed.group(1))
 
 
-def clean_traces(source: Path, root: Path) -> tuple[Path, Path, int]:
+def clean_traces(source: Path, root: Path, work: Path | None = None) -> tuple[Path, Path, int]:
     """Return (trace folder, binary, cycles) of a clean run of source."""
     # Reuse the clean run that evaluation already made for this exact program.
-    work = evaluate.RUNS / "full" / evaluate.evaluation_digest(source, True)
-    if (work / "profile.json").exists():
+    # A run report passes the folder from its manifest; the folder name
+    # changes whenever evaluate.py or config.py changes, so recomputing it can miss.
+    work = work or evaluate.RUNS / "full" / evaluate.evaluation_digest(source, True)
+    evidence = work / "detected-ids.json"
+    files = [work / "profile.json", work / "candidate.riscv", evidence]
+    traces = [work / "clean" / name for name in evaluate.TRACES]
+    # Reuse only a complete run made by this same simulator build; otherwise
+    # run the clean simulation again, so clean and faulty traces match.
+    if (all(path.exists() for path in files)
+            and all(path.exists() or Path(f"{path}.gz").exists() for path in traces)
+            and evaluate.normalize_fingerprint(json.loads(evidence.read_text()).get("campaign", {}))
+            == evaluate.campaign_fingerprint()):
         cycles = passed_cycles(work / "probe.log")
         if cycles is not None:
             return work / "clean", work / "candidate.riscv", cycles
@@ -93,7 +103,8 @@ def clean_traces(source: Path, root: Path) -> tuple[Path, Path, int]:
     return clean, binary, cycles
 
 
-def replay_faults(source: Path, fids: list[int], root: Path) -> dict:
+def replay_faults(source: Path, fids: list[int], root: Path,
+                  evaluated: Path | None = None) -> dict:
     """Run each fault alone with traces on, and compare it with the clean traces."""
     faults = {fault.fid: fault for fault in read_faults(config.SFF)}
     # Keep the inputs alongside the evidence so later edits cannot obscure them.
@@ -101,7 +112,7 @@ def replay_faults(source: Path, fids: list[int], root: Path) -> dict:
     for name in ("harness.c", "config.py"):
         shutil.copy2(evaluate.HERE / name, root / name)
     shutil.copy2(config.SFF, root / "faults.sff")
-    clean, binary, cycles = clean_traces(root / "source.S", root)
+    clean, binary, cycles = clean_traces(root / "source.S", root, evaluated)
     pc = evaluate.raw_body_address(binary)
     max_cycles = evaluate.fault_cycle_limit(cycles)
 
@@ -253,7 +264,7 @@ def report_run(run: Path) -> None:
         return
     root = run / "replays"
     root.mkdir()
-    replay_faults(best_work / "source.S", sorted(fault.fid for fault in chosen), root)
+    replay_faults(best_work / "source.S", sorted(fault.fid for fault in chosen), root, best_work)
     print(f"Done. Share {run}", flush=True)
 
 

@@ -435,6 +435,8 @@ def compile_program(source: Path, work: Path) -> Path:
         str(config.CC),
         "-O2", "-static", "-march=rv64imafd", "-mabi=lp64d", "-mcmodel=medany",
         "-specs=htif_nano.specs", "-T", str(config.LINKER),
+        # Put tohost/fromhost at the one address the hardware leaves uncached.
+        f"-Wl,--section-start=.htif=0x{config.HTIF_ADDRESS:x}",
         str(HERE / "harness.c"),
         # MicroGP produces names such as "individual0" without a .S suffix.
         # Tell GCC that this input is assembly instead of relying on its name.
@@ -449,7 +451,24 @@ def compile_program(source: Path, work: Path) -> Path:
         if "Assembler messages:" in text and re.search(r"\bError:", text):
             raise InvalidProgram(f"assembly rejected; see {log}") from error
         raise
+    check_htif(binary)
     return binary
+
+
+def check_htif(binary: Path) -> None:
+    """Make sure tohost sits at HTIF_ADDRESS and nothing else reaches that page."""
+    result = subprocess.run([str(config.NM), "--defined-only", str(binary)],
+                            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode:
+        raise RuntimeError(f"nm failed for {binary}: {result.stderr.strip()}")
+    symbols = {fields[-1]: int(fields[0], 16)
+               for fields in map(str.split, result.stdout.splitlines()) if len(fields) >= 3}
+    if symbols.get("tohost") != config.HTIF_ADDRESS:
+        raise RuntimeError(f"tohost is not at 0x{config.HTIF_ADDRESS:x} in {binary}")
+    # The linker does not check the heap and stack, so check that they end below the page.
+    stack_end = symbols["__stack_start"] + symbols["__stack_size"]
+    if max(symbols["_end"], stack_end) > config.HTIF_ADDRESS:
+        raise InvalidProgram(f"program, heap, or stack reaches 0x{config.HTIF_ADDRESS:x}")
 
 
 def raw_body_address(binary: Path) -> int:
@@ -550,7 +569,8 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
     profile = {pc: {"index": index, "pc": f"0x{pc:x}", "asm": body[pc], "issued": 0,
                     "ports": Counter(), "stall_cycles": Counter(),
                     "rs1": Counter(), "rs2": Counter(),
-                    "rs1_producers": Counter(), "rs2_producers": Counter()}
+                    "rs1_producers": Counter(), "rs2_producers": Counter(),
+                    "unattributed_forwarding": Counter()}
                for index, pc in enumerate(sorted(body))}
     # (operand, producer unit, distance, port, stalled?) -> how often it happened.
     events = Counter()
@@ -558,12 +578,27 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
     producers = {}
     # Per issue port: operands that had to wait for their producer before issuing.
     waited = defaultdict(set)
+    waiting_instruction = {}
 
     with open_trace(work / "clean" / TRACES[0]) as stream:
+        rows = csv.DictReader(stream)
+        required = {"rs1_producer_valid", "rs2_producer_valid"}
+        if not required.issubset(rows.fieldnames or []):
+            raise RuntimeError("trace lacks producer validity fields; rebuild with the fixed "
+                               "monitor and collect new traces; old producer IDs are unreliable")
         # The trace has one row per cycle that an instruction tries to issue.
-        for row in csv.DictReader(stream):
+        for row in rows:
+            if row["flush"] != "0":
+                # This flush discards unissued instructions, not live producers.
+                waited.clear()
+                waiting_instruction.clear()
+                continue
             pc = int(row["pc"], 16)
             port = int(row["issue_port"])
+            identity = (pc, int(row["consumer_id"]))
+            if waiting_instruction.get(port) != identity:
+                waited[port].clear()
+                waiting_instruction[port] = identity
             entry = profile.get(pc)
             for operand in ("rs1", "rs2"):
                 if row[f"raw_stall_{operand}"] == "1":
@@ -580,9 +615,6 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
             # Only issued instructions count; flushed ones were thrown away.
             if row["issue_accepted"] != "1":
                 continue
-            if row["flush"] != "0":
-                waited[port].clear()
-                continue
             order = int(row["accepted_order"])
             if entry is not None:
                 entry["issued"] += 1
@@ -591,12 +623,21 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
                     code = int(row[f"{operand}_source"])
                     source = SOURCES.get(code, str(code))
                     entry[operand][source] += 1
-                    producer = producers.get(int(row[f"{operand}_producer_id"]))
                     # "forward" means the value came from an older, unfinished instruction: a RAW.
-                    if source != "forward" or producer is None:
+                    if source != "forward":
+                        continue
+                    if row[f"{operand}_producer_valid"] != "1":
+                        entry["unattributed_forwarding"][f"{operand}: monitor found no producer"] += 1
+                        continue
+                    producer = producers.get(int(row[f"{operand}_producer_id"]))
+                    if producer is None:
+                        entry["unattributed_forwarding"][f"{operand}: producer absent from trace"] += 1
                         continue
                     producer_pc, unit, producer_order = producer
                     distance = order - producer_order
+                    if distance <= 0:
+                        entry["unattributed_forwarding"][f"{operand}: producer not older"] += 1
+                        continue
                     name = body.get(producer_pc, "outside raw_body")
                     entry[f"{operand}_producers"][
                         f"0x{producer_pc:x} {name} ({unit}, distance {distance})"] += 1
@@ -610,7 +651,7 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
             waited[port].clear()
 
     result = {
-        "format": 1,
+        "format": 2,
         "clean_cycles": cycles,
         "legend": {
             "issued": "times the instruction issued (raw_body runs 256 times)",
@@ -619,6 +660,8 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
                                            "distance counts issued instructions between them",
             "events": "every forwarded operand, grouped by operand, producer unit, "
                       "distance, issue port, and whether it had to wait",
+            "unattributed_forwarding": "forwarding seen without a reliable producer; "
+                                       "excluded from producer names and events",
         },
         "instructions": [{key: dict(value) if isinstance(value, Counter) else value
                           for key, value in entry.items()} for entry in profile.values()],
@@ -796,6 +839,8 @@ def detection_evidence(report: Path) -> dict:
 
 def save_detected_ids(work: Path) -> None:
     evidence = detection_evidence(work / "faults.rpt")
+    # Record the simulator build, so a replay never mixes traces from two builds.
+    evidence["campaign"] = campaign_fingerprint()
     temporary = work / "detected-ids.json.tmp"
     temporary.write_text(json.dumps(evidence, indent=2) + "\n")
     temporary.replace(work / "detected-ids.json")

@@ -40,6 +40,11 @@ OBJDUMP = RISCV / "bin/riscv64-unknown-elf-objdump"
 # The linker places a bare-metal program where the harness expects it.
 LINKER = TESTYARD / "tests/htif.ld"
 
+# tohost/fromhost (the .htif section) are linked at this fixed address. The
+# hardware leaves this 4 KiB page uncached, so the host's writes are always
+# seen. Keep it equal to tohostAddr in testyard/generators/cva6/.../CVA6Tile.scala.
+HTIF_ADDRESS = 0x80100000
+
 # The simulator reads its DRAM setup from this directory.
 DRAMSIM_INI = TESTYARD / "generators/testchipip/src/main/resources/dramsim2_ini"
 
