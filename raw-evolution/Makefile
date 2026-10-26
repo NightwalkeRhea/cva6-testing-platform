@@ -77,5 +77,5 @@ evolve:
 report:
 	@test -n "$(RUN)" || { echo 'usage: make report RUN=name'; false; }
 	@# A failed replay may hold a live database; never delete it from here.
-	@test ! -e "$(OUT)/replays" || { echo "move $(OUT)/replays aside first"; false; }
+	@test ! -e "$(OUT)/replays" || { echo "delete $(OUT)/replays first (no postmaster.pid inside)"; false; }
 	python3 replay.py --run "$(OUT)"

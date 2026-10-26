@@ -266,7 +266,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     evaluate.check()
     if args.run:
-        report_run(args.run)
+        # Make the path absolute: the tools run inside the stream folders.
+        report_run(args.run.resolve())
         return
     evaluate.require(args.source, "candidate assembly")
     selected = {fault.fid: fault for fault in read_faults(config.SFF)}

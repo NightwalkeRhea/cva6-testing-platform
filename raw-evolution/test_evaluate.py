@@ -596,6 +596,13 @@ class EvaluationTests(unittest.TestCase):
         # Only the best program's excited-but-missed faults are replayed.
         replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays")
 
+    def test_run_report_gets_an_absolute_path(self):
+        # make report passes results/NAME, relative to raw-evolution.
+        with patch.object(replay.evaluate, "check"), \
+             patch.object(replay, "report_run") as report:
+            replay.main(["--run", "results/run1"])
+        self.assertEqual(report.call_args.args[0], Path("results/run1").resolve())
+
     def test_injection_check_ignores_fault_free_tsim_tasks(self):
         for name, text in (("fsim:1", "Chronologic VCS simulator\nInfo : Injecting x\n"),
                            ("tsim:1", "Chronologic VCS simulator\n")):
