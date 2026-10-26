@@ -284,6 +284,28 @@ class EvaluationTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 evaluate.main()
         self.assertFalse(output.exists())
+        # The same holds when the reference itself fails to load.
+        output.write_text("100.000000000000 0\n")
+        with patch.object(sys, "argv", ["evaluate.py", "--require-reference", "seed.S"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(output)}), \
+             patch.object(evaluate, "load_reference", side_effect=ValueError("reference mismatch")):
+            with self.assertRaises(ValueError):
+                evaluate.main()
+        self.assertFalse(output.exists())
+
+    @unittest.skipUnless(shutil.which("tclsh"), "tclsh is not installed")
+    def test_unused_check_stops_tcl_before_fsim(self):
+        # Run the generated Tcl with a stub "report" that writes chosen counts.
+        report = self.root / "unrun-summary.rpt"
+        for na, code in ((4, 0), (3, 1)):
+            script = self.root / "check.tcl"
+            script.write_text(
+                f'proc report {{args}} {{ set f [open {{{report}}} w]; '
+                f'puts $f "# Testable Faults: 4\\n#   Not Attempted NA {na}"; close $f }}\n'
+                + evaluate.unused_report_command(report) + 'puts "fsim would start"\n')
+            result = subprocess.run(["tclsh", str(script)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, code, result.stderr)
+            self.assertEqual("fsim would start" in result.stdout, code == 0)
 
     def test_validation_still_selects_four_faults(self):
         output = self.root / "fitness.output"
@@ -409,6 +431,11 @@ ordinary_data: .quad 1
         with patch.object(evaluate.config, "SFF", sff), \
              patch.object(evaluate.config, "FITNESS_REFERENCE", reference_path), \
              patch.object(evaluate, "campaign_fingerprint", return_value={"build": "same"}):
+            # A report from another build must not be frozen with this build's label.
+            evaluate.save_detected_ids(base)
+            with patch.object(evaluate, "campaign_fingerprint", return_value={"build": "other"}):
+                with self.assertRaisesRegex(ValueError, "another simulator build"):
+                    evaluate.freeze_reference(base / "faults.rpt")
             evaluate.freeze_reference(base / "faults.rpt")
             reference = evaluate.load_reference(required=True)
             self.assertEqual(reference["detected_ids"], [1, 3])
@@ -451,6 +478,7 @@ ordinary_data: .quad 1
 
     def test_evolution_requires_a_reference_before_simulating(self):
         with patch.object(sys, "argv", ["evaluate.py", "--require-reference", "seed.S"]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(self.root / "fitness.output")}), \
              patch.object(evaluate.config, "FITNESS_REFERENCE", self.root / "absent.json"), \
              patch.object(evaluate, "score") as score:
             with self.assertRaisesRegex(FileNotFoundError, "freeze a full report"):
@@ -832,7 +860,8 @@ endmodule
         def program(name, coverage, by_status, events):
             work = self.root / "runs/full" / name
             work.mkdir(parents=True)
-            (work / "detected-ids.json").write_text(json.dumps({"ids_by_status": by_status}))
+            (work / "detected-ids.json").write_text(json.dumps(
+                {"ids_by_status": by_status, "campaign": {"build": "same"}}))
             (work / "profile.json").write_text(json.dumps({"events": events}))
             return {"individual": f"individual{name}", "digest": name,
                     "run_dir": f"runs/full/{name}", "coverage": coverage,
@@ -850,6 +879,14 @@ endmodule
         with patch.object(replay.config, "SFF", sff), \
              patch.object(replay.evaluate, "HERE", self.root), \
              patch.object(replay.config, "REPLAY_FAULTS", 5), \
+             patch.object(replay.evaluate, "campaign_fingerprint", return_value={"build": "other"}):
+            # Programs from another build must not be merged or replayed.
+            with self.assertRaisesRegex(RuntimeError, "another simulator build"):
+                replay.report_run(run)
+        with patch.object(replay.config, "SFF", sff), \
+             patch.object(replay.evaluate, "HERE", self.root), \
+             patch.object(replay.config, "REPLAY_FAULTS", 5), \
+             patch.object(replay.evaluate, "campaign_fingerprint", return_value={"build": "same"}), \
              patch.object(replay, "replay_faults") as replays:
             replay.report_run(run)
         report = json.loads((run / "report.json").read_text())

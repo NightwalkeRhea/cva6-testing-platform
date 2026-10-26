@@ -229,6 +229,14 @@ this run that only happens after waiting for a load. Check again after
 problem 1 is settled. If it is still always "stalled", drop it from the
 events so the LLM does not read meaning into it.
 
+Server check passed (Codex, 26 October): the clean seed finishes in 54,206
+cycles with signature 0x1200. Its format-2 profile shows 256/256 correct
+adjacent addi-to-xor forwards, and 256/256 correct ld-to-addi forwards.
+Every instruction has empty `unattributed_forwarding`. ALU events occur with
+"no stall" and the load-use event with "stalled", so keep the stall field.
+The cache rules leave 0x80100000-0x80100fff uncached. This validates the clean
+seed only, not the new fault campaign or replays under faults.
+
 Flow check before the rebuild (Claude, 26 October)
 
 Only RTL/Scala mistakes force a rebuild; Python mistakes do not. So check
@@ -255,3 +263,15 @@ inside the core, so fewer faults reach AXI. Coverage will not be comparable
 with the old baseline; it is replaced anyway.
 `SuperscalarEn` is 0, so there is one issue port: the `port` field in the
 events is always 0 and can be dropped with problem 3.
+
+Codex's audit items, fixed (Claude, 26 October), not committed:
+- Stale fitness: `main()` in `evaluate.py` now deletes `fitness.output` right
+  after reading the arguments, before the reference is loaded.
+- Old builds: `freeze_reference()` refuses a report whose folder has no
+  `detected-ids.json` from the current build. `report_run()` in `replay.py`
+  refuses a run whose programs came from another build or fault list.
+  The README's reference paragraph says the same.
+- Dirty database: the Tcl from `unused_report_command()` now reads its own
+  counts and exits before `fsim` if any testable fault is not NA.
+  `require_unused()` still gives the message in Python afterwards.
+New tests (one runs the Tcl with tclsh); all 53 tests pass.

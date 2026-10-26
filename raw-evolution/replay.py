@@ -84,7 +84,7 @@ def clean_traces(source: Path, root: Path, work: Path | None = None) -> tuple[Pa
     # run the clean simulation again, so clean and faulty traces match.
     if (all(path.exists() for path in files)
             and all(path.exists() or Path(f"{path}.gz").exists() for path in traces)
-            and evaluate.normalize_fingerprint(json.loads(evidence.read_text()).get("campaign", {}))
+            and json.loads(evidence.read_text()).get("campaign")
             == evaluate.campaign_fingerprint()):
         cycles = passed_cycles(work / "probe.log")
         if cycles is not None:
@@ -188,9 +188,14 @@ def report_run(run: Path) -> None:
     programs = {entry["digest"]: evaluate.HERE / entry["run_dir"] for entry in scored}
     best_status = {}
     seen = Counter()
+    build = evaluate.campaign_fingerprint()
     for work in programs.values():
         # Keep each fault's best status over all programs (DD beats NO beats NC).
         evidence = json.loads((work / "detected-ids.json").read_text())
+        # Every program must come from the current build and fault list, or the
+        # merged statuses and the replays would mix two different designs.
+        if evidence.get("campaign") != build:
+            raise RuntimeError(f"{work} was evaluated with another simulator build or fault list")
         for status, ids in evidence["ids_by_status"].items():
             for fid in ids:
                 if fid not in best_status or rank(status) < rank(best_status[fid]):

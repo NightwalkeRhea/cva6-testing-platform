@@ -363,8 +363,19 @@ def run_fcm(work: Path, script: Path, log: Path, database: Path | None = None) -
 
 def unused_report_command(report: Path) -> str:
     """Tcl that writes fault counts; an unused database has every testable fault NA."""
+    # Stop right here if the copy already has results, before hours of fsim.
+    # require_unused() repeats the same check in Python and gives the message.
     return (f"report -campaign {config.CAMPAIGN} -summaryonly "
-            f"-report {{{report}}} -overwrite\n")
+            f"-report {{{report}}} -overwrite\n"
+            f"set stream [open {{{report}}}]\n"
+            "set counts [read $stream]\n"
+            "close $stream\n"
+            "if {![regexp -line {^# Testable Faults:\\s+(\\d+)} $counts -> testable]\n"
+            "    || ![regexp -line {^#\\s+Not Attempted\\s+NA\\s+(\\d+)} $counts -> unattempted]\n"
+            "    || $testable == 0 || $testable != $unattempted} {\n"
+            "    puts stderr \"database contains results or lacks NA counts; not simulating\"\n"
+            "    exit 1\n"
+            "}\n")
 
 
 def require_unused(report: Path) -> None:
@@ -879,6 +890,13 @@ def freeze_reference(report: Path) -> None:
     require(markers, "evidence of injection")
     if INJECTION_MARKER not in markers.read_text():
         raise ValueError(f"no Z01X injection evidence in {markers}")
+    # The report must come from the current simulator build; its run saved the
+    # build in detected-ids.json. Otherwise an old report would get a new label.
+    saved = report.with_name("detected-ids.json")
+    require(saved, "the run's detected-ids.json")
+    if json.loads(saved.read_text()).get("campaign") != campaign_fingerprint():
+        raise ValueError(f"{report} was made by another simulator build; "
+                         "freeze a report evaluated with the current build")
     evidence = detection_evidence(report)
     evidence.update({"report": str(report.resolve()), "campaign": campaign_fingerprint()})
     destination = config.FITNESS_REFERENCE
@@ -1132,6 +1150,11 @@ def main() -> int:
     if not args.sources:
         parser.error("give at least one assembly file")
 
+    # Delete the previous batch's scores first. If this batch fails at any point,
+    # even while loading the reference, MicroGP must find no file, not old scores.
+    output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
+    output.unlink(missing_ok=True)
+
     validation_ids: list[int] | None = None
     result_group: str | None = None
     if args.validate_faults is not None:
@@ -1143,11 +1166,6 @@ def main() -> int:
         result_group = "validate"
 
     reference = load_reference(args.require_reference) if validation_ids is None else None
-
-    # Delete the previous batch's scores first. If this batch fails, MicroGP
-    # must find no file, not old scores that it would give to these programs.
-    output = Path(os.environ.get("UGP3_FITNESS_FILE", "fitness.output"))
-    output.unlink(missing_ok=True)
 
     # Share the Z01X jobs among the programs that run together. The faults are
     # split into the same tasks either way, so this changes speed, not results.

@@ -43,7 +43,8 @@ Untestable faults remain in the denominator, so 100% may be unreachable.
 
 Freeze a full report with `python3 evaluate.py --set-reference PATH/faults.rpt`
 before evolution. The reference must have a complete summary, evidence of
-injection, and the same faults in the same order as the current SFF. The saved
+injection, and the same faults in the same order as the current SFF. Its folder
+must also hold the `detected-ids.json` written by the current simulator build. The saved
 reference is checked against the current campaign before scoring. Missing or
 mismatched references stop evolution rather than silently disabling the second
 objective. A standalone seed evaluation can run before a reference exists;
