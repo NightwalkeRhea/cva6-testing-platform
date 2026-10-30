@@ -102,13 +102,14 @@ additional effort spent developing the guided method.
 | Mutation (`sigma`) | 0.25 | Initial strength of variation |
 | Inertia | 0.9 | Controls adaptation |
 | Concurrent evaluations | 16 | Evaluate up to sixteen candidates at once |
-| Z01X jobs (`Z01X_JOBS`) | 16 per batch | Shared by the programs in a batch: the seed alone gets 16, a full generation 1 each |
+| Z01X jobs (`Z01X_JOBS`) | 16 per batch | Shared by the distinct programs in a batch: the seed alone gets 16, 16 different programs 1 each |
 
 MicroGP passes a batch to `evaluate.py`, which runs the programs in parallel
 and writes one fitness file in the original order. Identical programs share a
-locked directory and reuse the completed result. The initial seed runs alone,
-so it gets all Z01X jobs and its fault tasks run side by side. The number of
-jobs changes only the speed, not the results.
+locked directory and reuse the completed result, so clones do not take a
+share of the jobs. The initial seed runs alone and gets all Z01X jobs. Faults
+are split into about two tasks per job (at most 2,046 each), so no job waits
+for one long task. Jobs and task size change only the speed, not the results.
 
 Allow up to 20 generations, 100 evaluations, 24 hours, or five generations
 without improvement, whichever limit is reached first. Record actual evaluations

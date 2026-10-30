@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import functools
 import gzip
 import hashlib
 import json
@@ -761,10 +762,17 @@ def write_tcl(
               + unused_report_command(report.with_name("unrun-summary.rpt"))
               if check_unused else "")
 
+    # A program finishes only when its slowest task does. About two tasks per job
+    # (at most Z01X's default of 2,046 faults) keeps every job busy to the end.
+    # Each fault is simulated on its own, so the task size changes speed, not results.
+    task_size = 2046 if ids is not None else min(2046, max(1, -(-testable_faults() // (2 * jobs))))
+
     # Keep one test case, one run of the faults, and one final report.
     path.write_text(
         f"""{unused}# Run this many of Z01X's fault tasks at the same time.
 set_config -global_max_jobs {jobs}
+# Put at most this many faults in one task.
+set_config -max_faults_per_fsim_task {task_size}
 # Run ordinary faults in parallel.
 set_config -fsim_mode {'serial' if trace_dir is not None else 'concurrent'}
 # Print progress every two minutes.
@@ -779,6 +787,12 @@ report -format standard -campaign {config.CAMPAIGN} -report {{{fault_report}}} -
 report -campaign {config.CAMPAIGN} -summaryonly -report {{{report}}} -overwrite
 """
     )
+
+
+@functools.cache
+def testable_faults() -> int:
+    """Count the faults in the SFF that can be simulated (all but untestable U*)."""
+    return sum(not fault.status.startswith("U") for fault in read_faults(config.SFF))
 
 
 def require_injection_marker(work: Path) -> None:
@@ -1167,9 +1181,12 @@ def main() -> int:
 
     reference = load_reference(args.require_reference) if validation_ids is None else None
 
-    # Share the Z01X jobs among the programs that run together. The faults are
-    # split into the same tasks either way, so this changes speed, not results.
-    jobs = max(1, config.Z01X_JOBS // min(len(args.sources), config.EVALUATIONS))
+    # Share the Z01X jobs among the programs that run together. Identical programs
+    # (clones) are simulated once, so count each distinct program once. Jobs
+    # change speed, not results.
+    programs = {Path(source).read_bytes() if Path(source).is_file() else source
+                for source in args.sources}
+    jobs = max(1, config.Z01X_JOBS // min(len(programs), config.EVALUATIONS))
 
     def evaluate_source(source):
         value = score(

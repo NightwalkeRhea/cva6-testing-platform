@@ -53,8 +53,8 @@ SEED = 946094937
 
 # Run up to 16 candidates at once.
 EVALUATIONS = 16
-# Z01X jobs shared by one batch: the seed alone gets all 16, so its fault
-# tasks run side by side; a full generation of 16 programs gets 1 job each.
+# Z01X jobs shared by the distinct programs of one batch (clones count once):
+# the seed alone gets all 16; 16 different programs get 1 job each.
 Z01X_JOBS = 16
 
 # Stop a broken candidate that never exits.

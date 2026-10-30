@@ -21,6 +21,9 @@ class EvaluationTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        # The fault count is cached per process; one test's fault list must not leak.
+        evaluate.testable_faults.cache_clear()
+        self.addCleanup(evaluate.testable_faults.cache_clear)
 
     def test_elapsed_times_and_failures_are_saved(self):
         with patch.object(evaluate.time, "perf_counter", side_effect=[10.0, 12.5]):
@@ -108,12 +111,32 @@ class EvaluationTests(unittest.TestCase):
                 evaluate.main()
                 self.assertEqual({call.kwargs["jobs"] for call in score.call_args_list}, {jobs})
 
+    def test_clones_do_not_take_a_share_of_the_jobs(self):
+        # 16 programs, but only 4 distinct ones: each gets 16 // 4 = 4 jobs.
+        sources = []
+        for index in range(16):
+            source = self.root / f"individual{index}"
+            source.write_text(f"program {index % 4}\n")
+            sources.append(str(source))
+        with patch.object(sys, "argv", ["evaluate.py", *sources]), \
+             patch.dict(evaluate.os.environ, {"UGP3_FITNESS_FILE": str(self.root / "f")}), \
+             patch.object(evaluate, "score", return_value=1.0) as score:
+            evaluate.main()
+        self.assertEqual({call.kwargs["jobs"] for call in score.call_args_list}, {4})
+
     def test_tcl_uses_the_jobs_it_is_given(self):
         tcl = self.root / "fsim.tcl"
-        with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
-            evaluate.write_tcl(tcl, self.root / "candidate.riscv", None,
-                               self.root / "summary.rpt", 0x80000290, jobs=16)
-        self.assertIn("set_config -global_max_jobs 16", tcl.read_text())
+        # About two tasks per job: 29,929 faults over 16 jobs gives 936 per task;
+        # one job keeps Z01X's default size, and replays of chosen IDs too.
+        for ids, jobs, size in ((None, 16, 936), (None, 1, 2046), ([7], 16, 2046)):
+            with self.subTest(jobs=jobs, ids=ids), \
+                 patch.object(evaluate, "raw_body_address", return_value=0x80000290), \
+                 patch.object(evaluate, "testable_faults", return_value=29929):
+                evaluate.write_tcl(tcl, self.root / "candidate.riscv", ids,
+                                   self.root / "summary.rpt", 0x80000290, jobs=jobs)
+                text = tcl.read_text()
+                self.assertIn(f"set_config -global_max_jobs {jobs}", text)
+                self.assertIn(f"set_config -max_faults_per_fsim_task {size}", text)
 
     def test_batch_runs_sixteen_programs_and_keeps_fitness_order(self):
         barrier = threading.Barrier(16, timeout=5)
@@ -234,7 +257,8 @@ class EvaluationTests(unittest.TestCase):
 
     def test_full_tcl_has_no_filter_for_fault_ids(self):
         tcl = self.root / "fsim.tcl"
-        with patch.object(evaluate, "raw_body_address", return_value=0x80000290):
+        with patch.object(evaluate, "raw_body_address", return_value=0x80000290), \
+             patch.object(evaluate, "testable_faults", return_value=29929):
             evaluate.write_tcl(tcl, self.root / "candidate.riscv", None,
                                self.root / "summary.rpt", 0x80000290)
         text = tcl.read_text()
@@ -852,8 +876,12 @@ endmodule
 
     def test_run_report_merges_candidates_and_replays_the_best(self):
         sff = self.root / "faults.sff"
+        # Real signal shapes: an exception field, a data path, and the unused CVXIF.
+        signals = ["i_scoreboard.wbdata_i[0][1]", "i_scoreboard.fwd_o.sbe[0].ex.cause[1]",
+                   "i_issue_read_operands.fwd_i.wb[0].data[1]", "i_scoreboard.fwd_o.sbe[0].ex.tval[1]",
+                   "i_scoreboard.x_we_i"]
         sff.write_text("FaultList {\n" + "\n".join(
-            f'NA 0 {{PORT "core.issue_stage_i.sig{i}"}}' for i in range(4)) + "\n}\n")
+            f'NA 0 {{PORT "core.issue_stage_i.{signal}"}}' for signal in signals) + "\n}\n")
         run = self.root / "results/run1"
         run.mkdir(parents=True)
 
@@ -870,8 +898,8 @@ endmodule
         event = {"operand": "rs1", "producer_unit": "ALU", "distance": "1",
                  "port": 0, "stall": "no stall", "count": 5}
         entries = [
-            program("A", 25.0, {"DD": [1], "NO": [2, 3], "NC": [4]}, [event]),
-            program("B", 50.0, {"DD": [1, 2], "NO": [3], "NC": [4]}, [event]),
+            program("A", 25.0, {"DD": [1], "NO": [2, 3], "NC": [4], "ND": [5]}, [event]),
+            program("B", 50.0, {"DD": [1, 2], "NO": [3], "NC": [4], "ND": [5]}, [event]),
             {"individual": "individualC", "digest": "C", "run_dir": "runs/full/C",
              "coverage": 0.0, "beyond_reference": 0, "rejected": "assembly rejected"},
         ]
@@ -893,13 +921,19 @@ endmodule
         self.assertEqual(report["best"]["individual"], "individualB")
         self.assertEqual((report["candidates"], report["rejected"]), (3, 1))
         # Fault 2 is detected by B, so it is no longer missed.
-        self.assertEqual(report["faults_by_best_status"], {"DD": 2, "NO": 1, "NC": 1})
-        self.assertEqual(report["missed_ids"], {"NO": [3], "NC": [4]})
-        self.assertEqual(report["missed_by_signal"], {"sig2": {"NO": 1}, "sig3": {"NC": 1}})
+        self.assertEqual(report["faults_by_best_status"], {"DD": 2, "NO": 1, "NC": 1, "ND": 1})
+        self.assertEqual(report["missed_ids"], {"NO": [3], "NC": [4], "ND": [5]})
+        self.assertEqual(report["missed_by_signal"], {
+            "i_issue_read_operands.fwd_i.wb[].data[]": {"NO": 1},
+            "i_scoreboard.fwd_o.sbe[].ex.tval[]": {"NC": 1}, "i_scoreboard.x_we_i": {"ND": 1}})
+        self.assertEqual({name: group["faults"] for name, group in report["missed_by_group"].items()},
+                         {"data paths": {"NO": 1}, "exception fields": {"NC": 1},
+                          "coprocessor interface (CVXIF)": {"ND": 1}})
         self.assertEqual(report["events_seen"][0]["programs"], 2)
         self.assertIn({"operand": "rs2", "producer_unit": "ALU", "distance": "1",
                        "port": 0, "stall": "no stall"}, report["events_never_seen"])
-        # Only the best program's excited-but-missed faults are replayed.
+        # Only the best program's simulated, missed faults the monitors can see are
+        # replayed: fault 3 (data path), not 5 (unused CVXIF) or 4 (never excited).
         replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays",
                                         self.root / "runs/full/B")
 
