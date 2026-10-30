@@ -3,6 +3,7 @@
   "legend": {
     "best": "highest coverage, then most detections beyond the reference; find its genome in status.xml by its individual name",
     "faults_by_best_status": "each fault counted once, with the best status any program reached: DD detected, NO excited but not seen at the boundary, NC never excited, U* untestable",
+    "missed_by_group": "faults no program detected, per hardware feature, with what a program usually needs to reach them",
     "missed_by_signal": "faults no program detected, per signal",
     "events_seen": "forwarding events, with how many programs produced each",
     "replays": "traces of single faults that the best program excited but missed"
@@ -26,6 +27,88 @@
     "UB": 20,
     "UT": 715,
     "UU": 6520
+  },
+  "missed_by_group": {
+    "exception fields": {
+      "faults": {
+        "NC": 4878,
+        "ND": 5069
+      },
+      "needs": "instructions that raise exceptions, and a trap handler that returns"
+    },
+    "branch prediction and resolution": {
+      "faults": {
+        "ND": 1583,
+        "NC": 1173
+      },
+      "needs": "taken and not-taken branches and jumps"
+    },
+    "register clobber select": {
+      "faults": {
+        "NO": 764,
+        "NC": 451,
+        "ND": 1332
+      },
+      "needs": "more registers, written by different units (load, multiply, ...)"
+    },
+    "program counter": {
+      "faults": {
+        "NC": 1089,
+        "ND": 1308
+      },
+      "needs": "code spread over more addresses; high PC bits stay constant"
+    },
+    "data paths": {
+      "faults": {
+        "ND": 1438,
+        "NC": 170
+      },
+      "needs": "more varied values, carried on to a store or the signature"
+    },
+    "register and ID fields": {
+      "faults": {
+        "ND": 252,
+        "NC": 27
+      },
+      "needs": "more registers and longer dependency chains"
+    },
+    "instruction kind flags": {
+      "faults": {
+        "ND": 137,
+        "NC": 97
+      },
+      "needs": "compressed (RVC) and other instruction encodings"
+    },
+    "op and unit fields": {
+      "faults": {
+        "NC": 24,
+        "ND": 185
+      },
+      "needs": "more kinds of instructions"
+    },
+    "coprocessor interface (CVXIF)": {
+      "faults": {
+        "NO": 22,
+        "ND": 36,
+        "NC": 8
+      },
+      "needs": "no coprocessor is attached: no program can reach these"
+    },
+    "FPU": {
+      "faults": {
+        "NO": 1,
+        "ND": 56,
+        "NC": 2
+      },
+      "needs": "floating-point instructions"
+    },
+    "other": {
+      "faults": {
+        "NC": 5,
+        "ND": 1
+      },
+      "needs": ""
+    }
   },
   "missed_by_signal": {
     "i_issue_read_operands.gen_sel_clobbers[].i_sel_gpr_clobbers.data_i[][]": {

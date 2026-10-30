@@ -5,12 +5,12 @@
   "max_cycles": 103164,
   "clean_traces": "/home/r.rastgou/cva6-testing-platform/raw-evolution/runs/full/70960a9258de486a/clean",
   "faults": {
-    "222": {
+    "1206": {
       "target": {
-        "fid": 222,
+        "fid": 1206,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fpu_ready_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fwd_i.sbe[0].is_macro_instr"
       },
       "replay_status": "ND",
       "traces": {
@@ -28,12 +28,12 @@
         }
       }
     },
-    "8857": {
+    "2075": {
       "target": {
-        "fid": 8857,
+        "fid": 2075,
         "initial_status": "NA",
         "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[0].i_sel_gpr_clobbers.data_i[8][1]"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fwd_i.sbe[1].is_compressed"
       },
       "replay_status": "ND",
       "traces": {
@@ -51,81 +51,12 @@
         }
       }
     },
-    "11516": {
+    "2369": {
       "target": {
-        "fid": 11516,
-        "initial_status": "NA",
-        "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[27].i_sel_gpr_clobbers.data_i[3][1]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "11620": {
-      "target": {
-        "fid": 11620,
-        "initial_status": "NA",
-        "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[27].i_sel_gpr_clobbers.rr_i[0]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "12616": {
-      "target": {
-        "fid": 12616,
-        "initial_status": "NA",
-        "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[4].i_sel_gpr_clobbers.rr_i[1]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "18815": {
-      "target": {
-        "fid": 18815,
+        "fid": 2369,
         "initial_status": "NA",
         "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.i_cvxif_issue_register_commit_if_driver.flush_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fwd_i.sbe[1].rs1[1]"
       },
       "replay_status": "ND",
       "traces": {
@@ -143,35 +74,12 @@
         }
       }
     },
-    "18816": {
+    "4145": {
       "target": {
-        "fid": 18816,
-        "initial_status": "NA",
-        "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.i_cvxif_issue_register_commit_if_driver.flush_i"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "22855": {
-      "target": {
-        "fid": 22855,
+        "fid": 4145,
         "initial_status": "NA",
         "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_ready_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fwd_i.sbe[3].use_imm"
       },
       "replay_status": "ND",
       "traces": {
@@ -189,12 +97,12 @@
         }
       }
     },
-    "22856": {
+    "8220": {
       "target": {
-        "fid": 22856,
+        "fid": 8220,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_ready_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.fwd_i.wb[3].trans_id[0]"
       },
       "replay_status": "ND",
       "traces": {
@@ -212,35 +120,12 @@
         }
       }
     },
-    "23061": {
+    "9492": {
       "target": {
-        "fid": 23061,
-        "initial_status": "NA",
-        "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_resp_i.writeback[0]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "23062": {
-      "target": {
-        "fid": 23062,
+        "fid": 9492,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_resp_i.writeback[0]"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[13].i_sel_gpr_clobbers.rr_i[1]"
       },
       "replay_status": "ND",
       "traces": {
@@ -258,12 +143,12 @@
         }
       }
     },
-    "23065": {
+    "11847": {
       "target": {
-        "fid": 23065,
+        "fid": 11847,
         "initial_status": "NA",
         "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_writeback_o"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[29].i_sel_gpr_clobbers.data_o[1]"
       },
       "replay_status": "ND",
       "traces": {
@@ -281,12 +166,12 @@
         }
       }
     },
-    "23066": {
+    "12604": {
       "target": {
-        "fid": 23066,
+        "fid": 12604,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.x_issue_writeback_o"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.gen_sel_clobbers[4].i_sel_gpr_clobbers.req_i[5]"
       },
       "replay_status": "ND",
       "traces": {
@@ -304,35 +189,12 @@
         }
       }
     },
-    "37169": {
+    "19890": {
       "target": {
-        "fid": 37169,
-        "initial_status": "NA",
-        "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_issue_writeback_i"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "37170": {
-      "target": {
-        "fid": 37170,
+        "fid": 19890,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_issue_writeback_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.is_zcmt_o"
       },
       "replay_status": "ND",
       "traces": {
@@ -350,58 +212,12 @@
         }
       }
     },
-    "37171": {
+    "20450": {
       "target": {
-        "fid": 37171,
-        "initial_status": "NA",
-        "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_rd_i[0]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "37173": {
-      "target": {
-        "fid": 37173,
-        "initial_status": "NA",
-        "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_rd_i[1]"
-      },
-      "replay_status": "ND",
-      "traces": {
-        "dependency.csv": {
-          "clean_rows": 25587,
-          "fault_rows": 25587,
-          "changed_fields": {},
-          "first_changes": []
-        },
-        "raw-checker.csv": {
-          "clean_rows": 51174,
-          "fault_rows": 51174,
-          "changed_fields": {},
-          "first_changes": []
-        }
-      }
-    },
-    "37180": {
-      "target": {
-        "fid": 37180,
+        "fid": 20450,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_rd_i[4]"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.issue_instr_i[0].is_zcmt"
       },
       "replay_status": "ND",
       "traces": {
@@ -419,12 +235,12 @@
         }
       }
     },
-    "37183": {
+    "21891": {
       "target": {
-        "fid": 37183,
+        "fid": 21891,
         "initial_status": "NA",
         "stuck_at": 0,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_we_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_issue_read_operands.rs1_forwarding_o[0][30]"
       },
       "replay_status": "ND",
       "traces": {
@@ -442,12 +258,375 @@
         }
       }
     },
-    "37184": {
+    "24320": {
       "target": {
-        "fid": 37184,
+        "fid": 24320,
         "initial_status": "NA",
         "stuck_at": 1,
-        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.x_we_i"
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.commit_instr_o[0].rs1[0]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "24898": {
+      "target": {
+        "fid": 24898,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.commit_instr_o[1].fu[1]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {
+            "rs2_producer_id": 36,
+            "raw_matches_rs2": 74,
+            "rs1_ready": 3,
+            "rs2_ready": 68,
+            "raw_matches_rs1": 3,
+            "rs1_producer_valid": 3,
+            "rs2_producer_valid": 68,
+            "rs1_producer_id": 2
+          },
+          "first_changes": [
+            {
+              "cycle": "17768",
+              "pc": "80001388",
+              "changes": {
+                "rs2_producer_id": [
+                  "4",
+                  "3"
+                ],
+                "raw_matches_rs2": [
+                  "10",
+                  "18"
+                ]
+              }
+            },
+            {
+              "cycle": "17778",
+              "pc": "80001388",
+              "changes": {
+                "raw_matches_rs2": [
+                  "1",
+                  "81"
+                ]
+              }
+            },
+            {
+              "cycle": "17788",
+              "pc": "80001388",
+              "changes": {
+                "rs2_producer_id": [
+                  "4",
+                  "3"
+                ],
+                "raw_matches_rs2": [
+                  "10",
+                  "18"
+                ]
+              }
+            },
+            {
+              "cycle": "17798",
+              "pc": "80001388",
+              "changes": {
+                "raw_matches_rs2": [
+                  "1",
+                  "81"
+                ]
+              }
+            },
+            {
+              "cycle": "17808",
+              "pc": "80001388",
+              "changes": {
+                "rs2_producer_id": [
+                  "4",
+                  "3"
+                ],
+                "raw_matches_rs2": [
+                  "10",
+                  "18"
+                ]
+              }
+            }
+          ]
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {
+            "still_issued": 342,
+            "expected_idx": 38
+          },
+          "first_changes": [
+            {
+              "cycle": "16955",
+              "pc": "8000040c",
+              "changes": {
+                "still_issued": [
+                  "78",
+                  "7c"
+                ]
+              }
+            },
+            {
+              "cycle": "16955",
+              "pc": "8000040c",
+              "changes": {
+                "still_issued": [
+                  "78",
+                  "7c"
+                ]
+              }
+            },
+            {
+              "cycle": "17720",
+              "pc": "80000a3e",
+              "changes": {
+                "still_issued": [
+                  "40",
+                  "60"
+                ]
+              }
+            },
+            {
+              "cycle": "17720",
+              "pc": "80000a3e",
+              "changes": {
+                "still_issued": [
+                  "40",
+                  "60"
+                ]
+              }
+            },
+            {
+              "cycle": "17768",
+              "pc": "80001388",
+              "changes": {
+                "still_issued": [
+                  "70",
+                  "78"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "25218": {
+      "target": {
+        "fid": 25218,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.commit_instr_o[1].trans_id[1]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "27740": {
+      "target": {
+        "fid": 27740,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.issue_pointer[0]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {
+            "issue_pointer": 27846
+          },
+          "first_changes": [
+            {
+              "cycle": "3747",
+              "pc": "80000298",
+              "changes": {
+                "issue_pointer": [
+                  "2",
+                  "3"
+                ]
+              }
+            },
+            {
+              "cycle": "3747",
+              "pc": "80000298",
+              "changes": {
+                "issue_pointer": [
+                  "2",
+                  "3"
+                ]
+              }
+            },
+            {
+              "cycle": "3760",
+              "pc": "800002a0",
+              "changes": {
+                "issue_pointer": [
+                  "4",
+                  "5"
+                ]
+              }
+            },
+            {
+              "cycle": "3760",
+              "pc": "800002a0",
+              "changes": {
+                "issue_pointer": [
+                  "4",
+                  "5"
+                ]
+              }
+            },
+            {
+              "cycle": "3763",
+              "pc": "800002a8",
+              "changes": {
+                "issue_pointer": [
+                  "6",
+                  "7"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "28594": {
+      "target": {
+        "fid": 28594,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.sbe[0].rs1[4]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "29164": {
+      "target": {
+        "fid": 29164,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.sbe[1].fu[1]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "29469": {
+      "target": {
+        "fid": 29469,
+        "initial_status": "NA",
+        "stuck_at": 0,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.sbe[1].rs1[4]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "32696": {
+      "target": {
+        "fid": 32696,
+        "initial_status": "NA",
+        "stuck_at": 1,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.sbe[5].op[6]"
+      },
+      "replay_status": "ND",
+      "traces": {
+        "dependency.csv": {
+          "clean_rows": 25587,
+          "fault_rows": 25587,
+          "changed_fields": {},
+          "first_changes": []
+        },
+        "raw-checker.csv": {
+          "clean_rows": 51174,
+          "fault_rows": 51174,
+          "changed_fields": {},
+          "first_changes": []
+        }
+      }
+    },
+    "33567": {
+      "target": {
+        "fid": 33567,
+        "initial_status": "NA",
+        "stuck_at": 0,
+        "path": "TestDriver.testHarness.chiptop0.system.tile_prci_domain.element_reset_domain_cva6_tile.core.i_ariane.i_cva6.issue_stage_i.i_scoreboard.fwd_o.sbe[6].op[4]"
       },
       "replay_status": "ND",
       "traces": {
