@@ -21,6 +21,38 @@ PASSED = re.compile(r"\*\*\* PASSED \*\*\* Completed after\s+(\d+) simulation cy
 # Order fault statuses from best to worst, to keep each fault's best result in a run.
 RANK = {"DD": 0, "PD": 1, "NO": 2, "ND": 3, "NC": 4}
 
+# Sort fault signals by the hardware feature they belong to; the first match wins.
+# Each group says what a program usually needs to reach its faults.
+GROUPS = [
+    ("coprocessor interface (CVXIF)", re.compile(r"(^|\.)x_|cvxif"),
+     "no coprocessor is attached: no program can reach these"),
+    ("exception fields", re.compile(r"\.ex\.|\.ex_i\b|\.ex_i\[|\.ex_valid"),
+     "instructions that raise exceptions, and a trap handler that returns"),
+    ("branch prediction and resolution", re.compile(r"\.bp\.|branch"),
+     "taken and not-taken branches and jumps"),
+    ("program counter", re.compile(r"\.pc\[|\.pc$"),
+     "code spread over more addresses; high PC bits stay constant"),
+    ("FPU", re.compile(r"fpu|fpr|rs3|frm|fflags"), "floating-point instructions"),
+    ("register clobber select", re.compile(r"clobber"),
+     "more registers, written by different units (load, multiply, ...)"),
+    ("data paths", re.compile(r"data|operand|result|forwarding|imm"),
+     "more varied values, carried on to a store or the signature"),
+    ("register and ID fields", re.compile(r"\.(rd|rs1|rs2)\[|trans_id|_id\b|pointer"),
+     "more registers and longer dependency chains"),
+    ("op and unit fields", re.compile(r"\.(op|fu)(\[|$)"), "more kinds of instructions"),
+    ("instruction kind flags", re.compile(r"\.is_|orig_instr|\.vfp|\.use_pc"),
+     "compressed (RVC) and other instruction encodings"),
+]
+# The monitors record operands, their sources, producers, and stalls. Only
+# faults in these groups can change those traces, so replays pick from them.
+REPLAY_GROUPS = ("data paths", "register clobber select", "register and ID fields",
+                 "op and unit fields")
+
+
+def signal_group(signal: str) -> str:
+    """Name the hardware feature a fault signal belongs to."""
+    return next((name for name, pattern, _ in GROUPS if pattern.search(signal)), "other")
+
 
 def rank(status: str) -> int:
     """Lower is better; untestable (U*) faults come last."""
@@ -205,15 +237,20 @@ def report_run(run: Path) -> None:
             seen[(event["operand"], event["producer_unit"], event["distance"],
                   event["port"], event["stall"])] += 1
 
-    # Faults no program detected, grouped by signal (bits of one bus together).
+    # Faults no program detected, grouped by signal (bits of one bus together)
+    # and by the hardware feature the signal belongs to.
     missed = defaultdict(Counter)
+    missed_groups = defaultdict(Counter)
     missed_ids = defaultdict(list)
     for fault in faults:
         status = best_status.get(fault.fid, fault.status)
         if status == "DD" or status.startswith("U"):
             continue
-        missed[fault.family.split("issue_stage_i.", 1)[-1]][status] += 1
+        signal = fault.family.split("issue_stage_i.", 1)[-1]
+        missed[signal][status] += 1
+        missed_groups[signal_group(signal)][status] += 1
         missed_ids[status].append(fault.fid)
+    needs = {name: need for name, _, need in GROUPS}
 
     # Combinations of the units and ports seen in this run that no program produced.
     # Some may be impossible on CVA6; they are hints, not targets.
@@ -235,6 +272,8 @@ def report_run(run: Path) -> None:
             "faults_by_best_status": "each fault counted once, with the best status any program "
                                      "reached: DD detected, NO excited but not seen at the "
                                      "boundary, NC never excited, U* untestable",
+            "missed_by_group": "faults no program detected, per hardware feature, "
+                               "with what a program usually needs to reach them",
             "missed_by_signal": "faults no program detected, per signal",
             "events_seen": "forwarding events, with how many programs produced each",
             "replays": "traces of single faults that the best program excited but missed",
@@ -244,6 +283,9 @@ def report_run(run: Path) -> None:
         "unique_programs": len(programs),
         "best": best,
         "faults_by_best_status": dict(Counter(best_status.values())),
+        "missed_by_group": {name: {"faults": dict(counts), "needs": needs.get(name, "")}
+                            for name, counts in sorted(missed_groups.items(),
+                                                       key=lambda item: -sum(item[1].values()))},
         "missed_by_signal": dict(sorted(((family, dict(counts)) for family, counts in missed.items()),
                                         key=lambda item: -sum(item[1].values()))),
         "missed_ids": dict(missed_ids),
@@ -256,16 +298,17 @@ def report_run(run: Path) -> None:
     (run / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(f"Wrote {run / 'report.json'}", flush=True)
 
-    # Pick the best program's missed faults that were excited (NO), spread over
-    # signals. Without NO labels, fall back to all undetected faults (ND).
+    # Pick the best program's missed faults that were simulated (NO or ND, not
+    # NC: a fault that is never excited cannot change a trace), only from groups
+    # the monitors can see, and spread over signals.
     best_work = evaluate.HERE / best["run_dir"]
     by_status = json.loads((best_work / "detected-ids.json").read_text())["ids_by_status"]
-    status = "NO" if by_status.get("NO") else "ND"
     by_id = {fault.fid: fault for fault in faults}
-    pool = [by_id[fid] for fid in by_status.get(status, [])]
+    pool = [by_id[fid] for status in ("NO", "ND") for fid in by_status.get(status, [])
+            if signal_group(by_id[fid].family.split("issue_stage_i.", 1)[-1]) in REPLAY_GROUPS]
     chosen = pick_balanced(pool, min(config.REPLAY_FAULTS, len(pool)), random.Random(config.SEED))
     if not chosen:
-        print("No excited but missed faults to replay", flush=True)
+        print("No missed faults the monitors can see; nothing to replay", flush=True)
         return
     root = run / "replays"
     root.mkdir()
