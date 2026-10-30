@@ -944,6 +944,18 @@ endmodule
             replay.main(["--run", "results/run1"])
         self.assertEqual(report.call_args.args[0], Path("results/run1").resolve())
 
+    def test_signal_groups_ignore_the_module_name(self):
+        # "i_issue_read_operands" contains "operand"; it must not make everything a data path.
+        for signal, group in (
+                ("i_issue_read_operands.fwd_i.sbe[].is_compressed", "instruction kind flags"),
+                ("i_issue_read_operands.fwd_i.sbe[].use_imm", "instruction kind flags"),
+                ("i_issue_read_operands.fwd_i.wb[].data[]", "data paths"),
+                ("i_scoreboard.ex_i[].cause[]", "exception fields"),
+                ("i_issue_read_operands.pc_o[]", "program counter"),
+                ("i_issue_read_operands.fu_data_o[].fu[]", "op and unit fields"),
+                ("i_scoreboard.x_we_i", "coprocessor interface (CVXIF)")):
+            self.assertEqual(replay.signal_group(signal), group, signal)
+
     def test_injection_check_ignores_fault_free_tsim_tasks(self):
         for name, text in (("fsim:1", "Chronologic VCS simulator\nInfo : Injecting x\n"),
                            ("tsim:1", "Chronologic VCS simulator\n")):

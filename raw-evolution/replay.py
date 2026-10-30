@@ -26,22 +26,22 @@ RANK = {"DD": 0, "PD": 1, "NO": 2, "ND": 3, "NC": 4}
 GROUPS = [
     ("coprocessor interface (CVXIF)", re.compile(r"(^|\.)x_|cvxif"),
      "no coprocessor is attached: no program can reach these"),
-    ("exception fields", re.compile(r"\.ex\.|\.ex_i\b|\.ex_i\[|\.ex_valid"),
+    ("exception fields", re.compile(r"(^|\.)(ex\.|ex_i\b|ex_i\[|ex_valid|tinst)"),
      "instructions that raise exceptions, and a trap handler that returns"),
-    ("branch prediction and resolution", re.compile(r"\.bp\.|branch"),
+    ("branch prediction and resolution", re.compile(r"(^|\.)bp\.|branch"),
      "taken and not-taken branches and jumps"),
-    ("program counter", re.compile(r"\.pc\[|\.pc$"),
+    ("program counter", re.compile(r"(^|\.)pc(_o)?(\[|$)"),
      "code spread over more addresses; high PC bits stay constant"),
     ("FPU", re.compile(r"fpu|fpr|rs3|frm|fflags"), "floating-point instructions"),
     ("register clobber select", re.compile(r"clobber"),
      "more registers, written by different units (load, multiply, ...)"),
-    ("data paths", re.compile(r"data|operand|result|forwarding|imm"),
-     "more varied values, carried on to a store or the signature"),
-    ("register and ID fields", re.compile(r"\.(rd|rs1|rs2)\[|trans_id|_id\b|pointer"),
-     "more registers and longer dependency chains"),
-    ("op and unit fields", re.compile(r"\.(op|fu)(\[|$)"), "more kinds of instructions"),
-    ("instruction kind flags", re.compile(r"\.is_|orig_instr|\.vfp|\.use_pc"),
+    ("instruction kind flags", re.compile(r"(^|\.)(is_|use_|vfp)|orig_instr"),
      "compressed (RVC) and other instruction encodings"),
+    ("op and unit fields", re.compile(r"(^|\.)(op|fu)(\[|$)"), "more kinds of instructions"),
+    ("data paths", re.compile(r"data|operand|result|forwarding|(^|\.)imm"),
+     "more varied values, carried on to a store or the signature"),
+    ("register and ID fields", re.compile(r"(^|\.)(rd|rs1|rs2)\[|trans_id|_id\b|pointer"),
+     "more registers and longer dependency chains"),
 ]
 # The monitors record operands, their sources, producers, and stalls. Only
 # faults in these groups can change those traces, so replays pick from them.
@@ -51,6 +51,8 @@ REPLAY_GROUPS = ("data paths", "register clobber select", "register and ID field
 
 def signal_group(signal: str) -> str:
     """Name the hardware feature a fault signal belongs to."""
+    # Match only after the module name: "i_issue_read_operands" itself contains "operand".
+    signal = re.sub(r"^(i_issue_read_operands|i_scoreboard)\.", "", signal)
     return next((name for name, pattern, _ in GROUPS if pattern.search(signal)), "other")
 
 
