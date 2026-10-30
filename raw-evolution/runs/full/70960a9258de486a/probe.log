@@ -1,0 +1,28 @@
+Info: [VCS_SAVE_RESTORE_INFO] ASLR (Address Space Layout Randomization) is detected on the machine. To enable $save functionality, ASLR will be switched off and simv re-executed.
+Please use '-no_save' simv switch to avoid re-execution or '-suppress=ASLR_DETECTED_INFO' to suppress this message.
+Notice: timing checks disabled with +notimingcheck at compile-time
+Chronologic VCS simulator copyright 1991-2025
+Contains Synopsys proprietary information.
+Compiler version X-2025.06-SP2_Full64; Runtime version X-2025.06-SP2_Full64;  Oct 29 07:26 2026
+*Verdi* Loading libsscore_vcs202506.so
+FSDB Dumper for VCS, Release Verdi_X-2025.06-SP2, Linux x86_64/64bit, 11/27/2025
+(C) 1996 - 2025 by Synopsys, Inc.
+*Verdi* : Create FSDB file 'novas.fsdb'
+*Verdi* : Begin traversing the scopes, layer (0).
+*Verdi* : End of traversing.
+[UART] UART0 is here (stdin/stdout).
+testing $random 5e6e09bc seed  946094937
+== Loading device model file '/home/r.rastgou/cva6-testing-platform/testyard/generators/testchipip/src/main/resources/dramsim2_ini/DDR3_micron_64M_8B_x4_sg15.ini' == 
+== Loading system model file '/home/r.rastgou/cva6-testing-platform/testyard/generators/testchipip/src/main/resources/dramsim2_ini/system.ini' == 
+===== MemorySystem 0 =====
+CH. 0 TOTAL_STORAGE : 4096MB | 1 Ranks | 16 Devices per rank
+DRAMSim2 Clock Frequency =666666666Hz, CPU Clock Frequency=500000000Hz
+CVA6 RAW: injecting faults at cycle 4138, commit port 0, raw_body PC 0x0000000080000290
+RAW evolution signature: 0x7fa8555b03b35575
+*** PASSED *** Completed after                68776 simulation cycles
+$finish called from file "/home/r.rastgou/cva6-testing-platform/testyard/generators/rocket-chip/src/main/resources/vsrc/TestDriver.v", line 158.
+$finish at simulation time            687755000
+           V C S   S i m u l a t i o n   R e p o r t 
+Time: 68775500000 fs
+CPU Time:     40.630 seconds;       Data structure size:   6.7Mb
+Thu Oct 29 07:27:17 2026

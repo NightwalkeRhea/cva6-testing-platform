@@ -1,0 +1,347 @@
+{
+  "format": 2,
+  "clean_cycles": 54206,
+  "legend": {
+    "issued": "times the instruction issued (raw_body runs 256 times)",
+    "rs1/rs2": "where the operand came from when it issued",
+    "rs1_producers/rs2_producers": "older instruction that forwarded the operand; distance counts issued instructions between them",
+    "events": "every forwarded operand, grouped by operand, producer unit, distance, issue port, and whether it had to wait",
+    "unattributed_forwarding": "forwarding seen without a reliable producer; excluded from producer names and events"
+  },
+  "instructions": [
+    {
+      "index": 0,
+      "pc": "0x80000290",
+      "asm": "addi sp,sp,-16",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 1,
+      "pc": "0x80000294",
+      "asm": "sd a0,0(sp)",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "forward": 256
+      },
+      "rs2": {
+        "regfile": 256
+      },
+      "rs1_producers": {
+        "0x80000290 addi sp,sp,-16 (ALU, distance 1)": 256
+      },
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 2,
+      "pc": "0x80000298",
+      "asm": "addi t0,a0,17",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 3,
+      "pc": "0x8000029c",
+      "asm": "xor t1,t0,a0",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "forward": 256
+      },
+      "rs2": {
+        "regfile": 256
+      },
+      "rs1_producers": {
+        "0x80000298 addi t0,a0,17 (ALU, distance 1)": 256
+      },
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 4,
+      "pc": "0x800002a0",
+      "asm": "slli t2,t1,0x3",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 1,
+        "forward": 255
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {
+        "0x8000029c xor t1,t0,a0 (ALU, distance 1)": 255
+      },
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 5,
+      "pc": "0x800002a4",
+      "asm": "addi t6,a0,5",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 6,
+      "pc": "0x800002a8",
+      "asm": "add t3,t2,t6",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 1,
+        "forward": 255
+      },
+      "rs2": {
+        "forward": 256
+      },
+      "rs1_producers": {
+        "0x800002a0 slli t2,t1,0x3 (ALU, distance 2)": 255
+      },
+      "rs2_producers": {
+        "0x800002a4 addi t6,a0,5 (ALU, distance 1)": 256
+      },
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 7,
+      "pc": "0x800002ac",
+      "asm": "sub t4,t3,t1",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "forward": 256
+      },
+      "rs2": {
+        "regfile": 256
+      },
+      "rs1_producers": {
+        "0x800002a8 add t3,t2,t6 (ALU, distance 1)": 256
+      },
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 8,
+      "pc": "0x800002b0",
+      "asm": "xor t5,t4,t3",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 1,
+        "forward": 255
+      },
+      "rs2": {
+        "regfile": 1,
+        "forward": 255
+      },
+      "rs1_producers": {
+        "0x800002ac sub t4,t3,t1 (ALU, distance 1)": 255
+      },
+      "rs2_producers": {
+        "0x800002a8 add t3,t2,t6 (ALU, distance 2)": 255
+      },
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 9,
+      "pc": "0x800002b4",
+      "asm": "ld t0,0(sp)",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 10,
+      "pc": "0x800002b8",
+      "asm": "addi t1,t0,31",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {
+        "waiting for a producer": 557
+      },
+      "rs1": {
+        "forward": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {
+        "0x800002b4 ld t0,0(sp) (LOAD, distance 1)": 256
+      },
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 11,
+      "pc": "0x800002bc",
+      "asm": "xor a0,t5,t1",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "forward": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {
+        "0x800002b8 addi t1,t0,31 (ALU, distance 1)": 256
+      },
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 12,
+      "pc": "0x800002c0",
+      "asm": "addi sp,sp,16",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "imm": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    },
+    {
+      "index": 13,
+      "pc": "0x800002c4",
+      "asm": "ret",
+      "issued": 256,
+      "ports": {
+        "0": 256
+      },
+      "stall_cycles": {},
+      "rs1": {
+        "regfile": 256
+      },
+      "rs2": {
+        "regfile": 256
+      },
+      "rs1_producers": {},
+      "rs2_producers": {},
+      "unattributed_forwarding": {}
+    }
+  ],
+  "events": [
+    {
+      "operand": "rs1",
+      "producer_unit": "ALU",
+      "distance": "1",
+      "port": 0,
+      "stall": "no stall",
+      "count": 1278
+    },
+    {
+      "operand": "rs1",
+      "producer_unit": "ALU",
+      "distance": "2",
+      "port": 0,
+      "stall": "no stall",
+      "count": 255
+    },
+    {
+      "operand": "rs1",
+      "producer_unit": "LOAD",
+      "distance": "1",
+      "port": 0,
+      "stall": "stalled",
+      "count": 256
+    },
+    {
+      "operand": "rs2",
+      "producer_unit": "ALU",
+      "distance": "1",
+      "port": 0,
+      "stall": "no stall",
+      "count": 512
+    },
+    {
+      "operand": "rs2",
+      "producer_unit": "ALU",
+      "distance": "2",
+      "port": 0,
+      "stall": "no stall",
+      "count": 255
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+#------------------------------------------------------------------------
+# Fault Coverage Summary for Default List
+#
+#                                                  Total
+#------------------------------------------------------------------------
+# Number of Faults:                                37184 100.00%    
+#
+# Untestable Faults:                                7255  19.51%  100.00%  
+#   Untestable Unused                        UU     6520  17.53%   89.87%
+#   Untestable Blocked                       UB       20   0.05%    0.28%
+#   Untestable Tied                          UT      715   1.92%    9.86%
+#
+# Testable Faults:                                 29929  80.49%  100.00% 
+#   Dropped Detected                         DD     8179  22.00%   27.33%
+#   Dropped Potential                        PD        3   0.01%    0.01%
+#   Not Detected                             ND    13273  35.70%   44.35%
+#   Not Observed                             NO      502   1.35%    1.68%
+#   Not Controlled                           NC     7972  21.44%   26.64%
+#
+# Status Groups ---------------------------------------------------------
+#   Detected                                 DG     8179  22.00%
+#   Unselected                               NG     8474  22.79%
+#   Potential                                PG        3   0.01%
+#   Untestable                               UG     7255  19.51%
+#
+# Coverage --------------------------------------------------------------
+#   Test Coverage                                         27.33%
+#   Fault Coverage                                        22.00%
+#------------------------------------------------------------------------
