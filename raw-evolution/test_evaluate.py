@@ -932,7 +932,7 @@ endmodule
         self.assertEqual(report["events_seen"][0]["programs"], 2)
         self.assertIn({"operand": "rs2", "producer_unit": "ALU", "distance": "1",
                        "port": 0, "stall": "no stall"}, report["events_never_seen"])
-        # Only the best program's simulated, missed faults the monitors can see are
+        # Only the best program's simulated, missed faults in the replay groups are
         # replayed: fault 3 (data path), not 5 (unused CVXIF) or 4 (never excited).
         replays.assert_called_once_with(self.root / "runs/full/B/source.S", [3], run / "replays",
                                         self.root / "runs/full/B")
@@ -951,6 +951,8 @@ endmodule
                 ("i_issue_read_operands.fwd_i.sbe[].use_imm", "instruction kind flags"),
                 ("i_issue_read_operands.fwd_i.wb[].data[]", "data paths"),
                 ("i_scoreboard.ex_i[].cause[]", "exception fields"),
+                ("i_scoreboard.ex_i[].tval2[]", "hypervisor exception fields"),
+                ("i_issue_read_operands.fwd_i.sbe[].ex.tinst[]", "hypervisor exception fields"),
                 ("i_issue_read_operands.pc_o[]", "program counter"),
                 ("i_issue_read_operands.fu_data_o[].fu[]", "op and unit fields"),
                 ("i_scoreboard.x_we_i", "coprocessor interface (CVXIF)")):

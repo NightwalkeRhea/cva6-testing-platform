@@ -693,7 +693,7 @@ def write_profile(binary: Path, work: Path, cycles: int) -> None:
         "format": 2,
         "clean_cycles": cycles,
         "legend": {
-            "issued": "times the instruction issued (raw_body runs 256 times)",
+            "issued": "times the instruction issued (raw_body runs 64 times)",
             "rs1/rs2": "where the operand came from when it issued",
             "rs1_producers/rs2_producers": "older instruction that forwarded the operand; "
                                            "distance counts issued instructions between them",

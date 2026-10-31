@@ -26,8 +26,10 @@ RANK = {"DD": 0, "PD": 1, "NO": 2, "ND": 3, "NC": 4}
 GROUPS = [
     ("coprocessor interface (CVXIF)", re.compile(r"(^|\.)x_|cvxif"),
      "no coprocessor is attached: no program can reach these"),
-    ("exception fields", re.compile(r"(^|\.)(ex\.|ex_i\b|ex_i\[|ex_valid|tinst)"),
-     "instructions that raise exceptions, and a trap handler that returns"),
+    ("hypervisor exception fields", re.compile(r"tval2|tinst|(^|\.)gva\b"),
+     "the hypervisor extension is off (RVH = 0): no program can use these"),
+    ("exception fields", re.compile(r"(^|\.)(ex\.|ex_i\b|ex_i\[|ex_valid)"),
+     "instructions that raise exceptions (the harness skips them and continues)"),
     ("branch prediction and resolution", re.compile(r"(^|\.)bp\.|branch"),
      "taken and not-taken branches and jumps"),
     ("program counter", re.compile(r"(^|\.)pc(_o)?(\[|$)"),
@@ -43,8 +45,9 @@ GROUPS = [
     ("register and ID fields", re.compile(r"(^|\.)(rd|rs1|rs2)\[|trans_id|_id\b|pointer"),
      "more registers and longer dependency chains"),
 ]
-# The monitors record operands, their sources, producers, and stalls. Only
-# faults in these groups can change those traces, so replays pick from them.
+# The monitors record operands, their sources, producers, and stalls. Faults in
+# these groups are the most likely to change those traces, so replays pick from
+# them. Faults elsewhere (branches, exceptions, PC) can change them too.
 REPLAY_GROUPS = ("data paths", "register clobber select", "register and ID fields",
                  "op and unit fields")
 
@@ -301,8 +304,8 @@ def report_run(run: Path) -> None:
     print(f"Wrote {run / 'report.json'}", flush=True)
 
     # Pick the best program's missed faults that were simulated (NO or ND, not
-    # NC: a fault that is never excited cannot change a trace), only from groups
-    # the monitors can see, and spread over signals.
+    # NC: a fault that is never excited cannot change a trace), from the groups
+    # the monitors record, and spread over signals.
     best_work = evaluate.HERE / best["run_dir"]
     by_status = json.loads((best_work / "detected-ids.json").read_text())["ids_by_status"]
     by_id = {fault.fid: fault for fault in faults}
@@ -310,7 +313,7 @@ def report_run(run: Path) -> None:
             if signal_group(by_id[fid].family.split("issue_stage_i.", 1)[-1]) in REPLAY_GROUPS]
     chosen = pick_balanced(pool, min(config.REPLAY_FAULTS, len(pool)), random.Random(config.SEED))
     if not chosen:
-        print("No missed faults the monitors can see; nothing to replay", flush=True)
+        print("No missed faults in the replay groups; nothing to replay", flush=True)
         return
     root = run / "replays"
     root.mkdir()
