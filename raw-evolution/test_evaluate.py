@@ -878,7 +878,7 @@ endmodule
         sff = self.root / "faults.sff"
         # Real signal shapes: an exception field, a data path, and the unused CVXIF.
         signals = ["i_scoreboard.wbdata_i[0][1]", "i_scoreboard.fwd_o.sbe[0].ex.cause[1]",
-                   "i_issue_read_operands.fwd_i.wb[0].data[1]", "i_scoreboard.fwd_o.sbe[0].ex.tval[1]",
+                   "i_issue_read_operands.fwd_i.wb[0].data[1]", "i_scoreboard.fwd_o.sbe[0].ex.cause[1]",
                    "i_scoreboard.x_we_i"]
         sff.write_text("FaultList {\n" + "\n".join(
             f'NA 0 {{PORT "core.issue_stage_i.{signal}"}}' for signal in signals) + "\n}\n")
@@ -925,7 +925,7 @@ endmodule
         self.assertEqual(report["missed_ids"], {"NO": [3], "NC": [4], "ND": [5]})
         self.assertEqual(report["missed_by_signal"], {
             "i_issue_read_operands.fwd_i.wb[].data[]": {"NO": 1},
-            "i_scoreboard.fwd_o.sbe[].ex.tval[]": {"NC": 1}, "i_scoreboard.x_we_i": {"ND": 1}})
+            "i_scoreboard.fwd_o.sbe[].ex.cause[]": {"NC": 1}, "i_scoreboard.x_we_i": {"ND": 1}})
         self.assertEqual({name: group["faults"] for name, group in report["missed_by_group"].items()},
                          {"data paths": {"NO": 1}, "exception fields": {"NC": 1},
                           "coprocessor interface (CVXIF)": {"ND": 1}})
@@ -951,8 +951,9 @@ endmodule
                 ("i_issue_read_operands.fwd_i.sbe[].use_imm", "instruction kind flags"),
                 ("i_issue_read_operands.fwd_i.wb[].data[]", "data paths"),
                 ("i_scoreboard.ex_i[].cause[]", "exception fields"),
-                ("i_scoreboard.ex_i[].tval2[]", "hypervisor exception fields"),
-                ("i_issue_read_operands.fwd_i.sbe[].ex.tinst[]", "hypervisor exception fields"),
+                ("i_scoreboard.ex_i[].tval2[]", "disabled exception fields"),
+                ("i_scoreboard.ex_i[].tval[]", "disabled exception fields"),
+                ("i_issue_read_operands.fwd_i.sbe[].ex.tinst[]", "disabled exception fields"),
                 ("i_issue_read_operands.pc_o[]", "program counter"),
                 ("i_issue_read_operands.fu_data_o[].fu[]", "op and unit fields"),
                 ("i_scoreboard.x_we_i", "coprocessor interface (CVXIF)")):

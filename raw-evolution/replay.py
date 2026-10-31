@@ -26,8 +26,8 @@ RANK = {"DD": 0, "PD": 1, "NO": 2, "ND": 3, "NC": 4}
 GROUPS = [
     ("coprocessor interface (CVXIF)", re.compile(r"(^|\.)x_|cvxif"),
      "no coprocessor is attached: no program can reach these"),
-    ("hypervisor exception fields", re.compile(r"tval2|tinst|(^|\.)gva\b"),
-     "the hypervisor extension is off (RVH = 0): no program can use these"),
+    ("disabled exception fields", re.compile(r"tval|tinst|(^|\.)gva\b"),
+     "off in this build (RVH = 0, TvalEn = 0): no program can use these"),
     ("exception fields", re.compile(r"(^|\.)(ex\.|ex_i\b|ex_i\[|ex_valid)"),
      "instructions that raise exceptions (the harness skips them and continues)"),
     ("branch prediction and resolution", re.compile(r"(^|\.)bp\.|branch"),

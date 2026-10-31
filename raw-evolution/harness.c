@@ -1,7 +1,6 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 // MicroGP writes this function in assembly.
 extern uint64_t raw_body(uint64_t seed);
@@ -19,28 +18,57 @@ static uint64_t splitmix64(uint64_t x) {
     return x ^ (x >> 31);
 }
 
-// Every trap adds its cause, value, and address here, so it reaches the signature.
-static volatile uint64_t traps;
+// Every trap adds its cause and address here, so it reaches the signature.
+// (mtval always reads 0 in this build: TvalEn = 0.)
+volatile uint64_t raw_traps;
 
-// Skip the instruction that trapped and continue. Programs that never trap never get here.
-__attribute__((interrupt("machine"), aligned(4)))
-static void trap_handler(void) {
-    uint64_t cause, value, pc;
-    __asm__ volatile("csrr %0, mcause" : "=r"(cause));
-    __asm__ volatile("csrr %0, mtval" : "=r"(value));
-    __asm__ volatile("csrr %0, mepc" : "=r"(pc));
-    traps = traps * 31 + (cause ^ value ^ pc);
-    // A failed fetch has no instruction to skip, so stop with an error.
-    if (cause == 0 || cause == 1 || cause == 12) {
-        exit(3);
-    }
+// Skip the instruction that trapped and continue. Programs that never trap never
+// get here. Written in assembly because this CPU has no FPU: a C interrupt
+// handler would save float registers and trap again.
+void raw_trap(void);
+__asm__(
+    "    .text\n"
+    "    .align 2\n"
+    "raw_trap:\n"
+    "    addi sp, sp, -32\n"
+    "    sd t0, 0(sp)\n"
+    "    sd t1, 8(sp)\n"
+    "    sd t2, 16(sp)\n"
+    "    sd t3, 24(sp)\n"
+    "    csrr t0, mcause\n"
+    // A failed fetch (cause 0, 1, 12) has no instruction to skip: stop with an error.
+    "    li t1, 1\n"
+    "    bleu t0, t1, 2f\n"
+    "    li t1, 12\n"
+    "    beq t0, t1, 2f\n"
+    // raw_traps = raw_traps * 31 + (mcause ^ mepc)
+    "    csrr t2, mepc\n"
+    "    xor t0, t0, t2\n"
+    "    la t1, raw_traps\n"
+    "    ld t3, 0(t1)\n"
+    "    sub t0, t0, t3\n"
+    "    slli t3, t3, 5\n"
+    "    add t0, t0, t3\n"
+    "    sd t0, 0(t1)\n"
     // Compressed instructions are 2 bytes; their two low bits are not 11.
-    pc += (*(volatile uint16_t *)pc & 3) == 3 ? 4 : 2;
-    __asm__ volatile("csrw mepc, %0" : : "r"(pc));
-}
+    "    lhu t0, 0(t2)\n"
+    "    andi t0, t0, 3\n"
+    "    addi t2, t2, 2\n"
+    "    li t1, 3\n"
+    "    bne t0, t1, 1f\n"
+    "    addi t2, t2, 2\n"
+    "1:  csrw mepc, t2\n"
+    "    ld t0, 0(sp)\n"
+    "    ld t1, 8(sp)\n"
+    "    ld t2, 16(sp)\n"
+    "    ld t3, 24(sp)\n"
+    "    addi sp, sp, 32\n"
+    "    mret\n"
+    "2:  li a0, 3\n"
+    "    call exit\n");
 
 int main(void) {
-    __asm__ volatile("csrw mtvec, %0" : : "r"(trap_handler));
+    __asm__ volatile("csrw mtvec, %0" : : "r"(raw_trap));
 
     // Mix every result into one visible value.
     uint64_t signature = 0;
@@ -51,7 +79,7 @@ int main(void) {
     }
 
     // Keep the program result in the normal simulation log.
-    printf("RAW evolution signature: 0x%016" PRIx64 "\n", signature ^ traps);
+    printf("RAW evolution signature: 0x%016" PRIx64 "\n", signature ^ raw_traps);
 
     // Zero tells the test harness that the program completed.
     return 0;

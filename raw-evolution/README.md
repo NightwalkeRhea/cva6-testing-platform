@@ -18,7 +18,7 @@ times: 8 edge values (zero, all ones, alternating bits, sign bit), then 56
 splitmix64 values. It XORs the returned values and prints a signature. On
 buono, the best program detected the same faults with 64 such inputs as with 256.
 The harness also installs a trap handler: it skips the instruction that trapped
-and mixes the cause, value, and address into the signature. A failed fetch
+and mixes the cause and address into the signature. A failed fetch
 stops the program with an error. Programs that never trap are unaffected.
 The genome includes the seed as its fixed base; MicroGP can add or alter patterns
 around that base. The smoke check verifies that generation zero matches `seed.S`.
